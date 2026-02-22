@@ -1,47 +1,59 @@
 import gradio as gr
-from transformers import pipeline
+from models.layoutlm import LayoutLMQA
+from models.donut import DonutExtractor
 
-# Initialize the document-question-answering pipeline
-print("Loading model... (This might take a minute on the first run)")
-pipe = pipeline("document-question-answering", model="impira/layoutlm-document-qa")
-print("Model loaded successfully!")
+# Initialize model wrappers (models themselves are loaded lazily on first use)
+layoutlm_model = LayoutLMQA()
+donut_model = DonutExtractor()
 
-def process_document(image, question):
+def process_document(image, model_choice, question):
     if image is None:
         return "Please upload an image."
-    if not question or not question.strip():
-        return "Please provide a question."
     
     try:
-        # The pipeline accepts an image and a question
-        result = pipe(image=image, question=question)
-        
-        # Extract the answer from the result
-        if isinstance(result, list) and len(result) > 0:
-            # Usually returns a list of dictionaries like [{'score': 0.99, 'answer': 'value', 'start': 1, 'end': 2}]
-            answer = result[0].get('answer', str(result))
-            score = result[0].get('score', 0)
-            return f"{answer}\n\n(Confidence: {score:.2f})"
-        elif isinstance(result, dict):
-            answer = result.get('answer', str(result))
-            score = result.get('score', 0)
-            return f"{answer}\n\n(Confidence: {score:.2f})"
+        if model_choice == "impira/layoutlm-document-qa":
+            return layoutlm_model.process(image, question)
+        elif model_choice == "mychen76/invoice-and-receipts_donut_v1":
+            return donut_model.process(image)
             
-        return str(result)
     except Exception as e:
-        return f"Error processing document: {str(e)}\n\nNote: If you see an error about Tesseract, please make sure Tesseract OCR is installed on your system and added to your PATH."
+        return f"Error processing document: {str(e)}\n\n(Check terminal for more details)"
 
-# Create the Gradio interface
-demo = gr.Interface(
-    fn=process_document,
-    inputs=[
-        gr.Image(type="pil", label="Upload Document/Receipt"),
-        gr.Textbox(label="Question", placeholder="e.g., What is the total amount?")
-    ],
-    outputs=gr.Textbox(label="Answer"),
-    title="Receipt/Document Question Answering",
-    description="Upload an image of a document or receipt and ask a question about its contents using the `impira/layoutlm-document-qa` model.",
-)
+def update_ui(model_choice):
+    # Hide the question textbox if Donut is selected since it just extracts the whole document to JSON
+    if model_choice == "impira/layoutlm-document-qa":
+        return gr.update(visible=True)
+    else:
+        return gr.update(visible=False)
+
+with gr.Blocks(title="Receipt/Document Analysis") as demo:
+    gr.Markdown("# Receipt/Document Analysis Multi-Model")
+    gr.Markdown("Upload an image of a document or receipt. Choose a model to either ask targeted questions or extract the complete JSON structure.")
+    
+    with gr.Row():
+        with gr.Column(scale=1):
+            image_input = gr.Image(type="pil", label="Upload Document/Receipt")
+            model_dropdown = gr.Dropdown(
+                choices=["impira/layoutlm-document-qa", "mychen76/invoice-and-receipts_donut_v1"],
+                value="impira/layoutlm-document-qa",
+                label="Select Model Pipeline"
+            )
+            question_input = gr.Textbox(
+                label="Question (Only needed for LayoutLM model)", 
+                placeholder="e.g., What is the total amount?"
+            )
+            process_btn = gr.Button("Process Document", variant="primary")
+            
+        with gr.Column(scale=1):
+            output_text = gr.Textbox(label="Result", lines=15)
+            
+    model_dropdown.change(fn=update_ui, inputs=model_dropdown, outputs=question_input)
+    
+    process_btn.click(
+        fn=process_document,
+        inputs=[image_input, model_dropdown, question_input],
+        outputs=output_text
+    )
 
 if __name__ == "__main__":
     demo.launch(inbrowser=True)
