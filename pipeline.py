@@ -3,8 +3,23 @@ Shared receipt pipeline: LayoutLM (QA) → Donut (extraction) → LLM normalize 
 Used by both api.py (Flask) and app.py (Gradio). Single source of truth.
 """
 import json
+import logging
+import os
+import shutil
+
+import pytesseract
 
 from models.layoutlm import LayoutLMQA
+
+# Set Tesseract binary path so it works under systemd (minimal PATH).
+# LayoutLM document-question-answering pipeline uses pytesseract for OCR.
+_tesseract_cmd = (
+    os.environ.get("TESSERACT_CMD")
+    or shutil.which("tesseract")
+    or "/usr/bin/tesseract"
+)
+pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
+logging.getLogger(__name__).debug("Tesseract cmd: %s", _tesseract_cmd)
 from models.donut import DonutExtractor
 from llm_normalize import normalize_receipt, RECEIPT_KEYS
 
