@@ -1,1 +1,3 @@
 .gradio/
+.env
+__pycache__/

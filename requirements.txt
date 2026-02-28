@@ -1,0 +1,8 @@
+flask>=3.0
+gunicorn>=21.0
+ollama>=0.3.0
+python-dotenv>=1.0
+Pillow>=10.0
+torch
+transformers
+requests>=2.28
