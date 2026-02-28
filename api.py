@@ -1,10 +1,12 @@
 """
 Flask API for receipt processing. Uses shared pipeline.process_receipt_image().
 POST /api/process: image (file or path) + optional questions → receipt JSON.
+Single-token throttle: only one request runs the pipeline at a time; others wait in line.
 """
 import json
 import os
 import io
+import threading
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -15,6 +17,9 @@ from PIL import Image
 from pipeline import process_receipt_image, DEFAULT_QUESTIONS
 
 app = Flask(__name__)
+
+# One token: only one /api/process request runs the pipeline at a time; others block (FIFO).
+_api_pipeline_semaphore = threading.Semaphore(1)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 
@@ -94,7 +99,26 @@ def process():
         except (json.JSONDecodeError, TypeError):
             pass
 
-    result = process_receipt_image(image, questions=questions)
+    # Single-token throttle: wait in line (optional timeout)
+    timeout_sec = None
+    try:
+        raw = os.environ.get("PIPELINE_THROTTLE_TIMEOUT", "").strip()
+        if raw:
+            timeout_sec = int(raw)
+    except (TypeError, ValueError):
+        pass
+
+    if timeout_sec and timeout_sec > 0:
+        acquired = _api_pipeline_semaphore.acquire(blocking=True, timeout=timeout_sec)
+        if not acquired:
+            return jsonify({"error": "Queue wait timeout"}), 503
+    else:
+        _api_pipeline_semaphore.acquire()
+
+    try:
+        result = process_receipt_image(image, questions=questions)
+    finally:
+        _api_pipeline_semaphore.release()
 
     response = {"receipt": result["receipt"]}
     if os.environ.get("INCLUDE_RAW", "true").strip().lower() in ("1", "true", "yes"):
