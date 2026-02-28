@@ -6,3 +6,4 @@ Pillow>=10.0
 torch
 transformers
 requests>=2.28
+gradio>=4.0
