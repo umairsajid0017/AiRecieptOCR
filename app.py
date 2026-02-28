@@ -1,100 +1,37 @@
 """
-Gradio UI: same pipeline as API — image → LayoutLM (default questions) → Donut → LLM normalize → receipt JSON.
+Gradio UI for receipt processing. Uses shared pipeline.process_receipt_image().
 """
 import json
-import os
 
 from dotenv import load_dotenv
 load_dotenv()
 
 import gradio as gr
-from models.layoutlm import LayoutLMQA
-from models.donut import DonutExtractor
-from llm_normalize import normalize_receipt, RECEIPT_KEYS
 
-# Same default questions as API
-DEFAULT_QUESTIONS = [
-    "What is the store or business name?",
-    "What is the shop name?",
-    "What is the date on the receipt?",
-    "What is the total amount?",
-    "What is the tax amount?",
-    "What is the GST amount?",
-    "What is the sales tax?",
-    "What is the amount received?",
-    "What is the amount payable?",
-]
-
-layoutlm_model = LayoutLMQA()
-donut_model = DonutExtractor()
+from pipeline import process_receipt_image
 
 
-def parse_layoutlm_answer(raw: str) -> str:
-    """Extract answer text from LayoutLM output (strips ' (Confidence: 0.xx)')."""
-    if not raw or not isinstance(raw, str):
-        return raw or ""
-    if "\n\n(Confidence:" in raw:
-        raw = raw.split("\n\n(Confidence:")[0].strip()
-    return raw.strip()
-
-
-def ensure_receipt_schema(receipt: dict) -> dict:
-    """Ensure receipt has exactly RECEIPT_KEYS for display."""
-    out = {}
-    for key in RECEIPT_KEYS:
-        out[key] = receipt.get(key) if key in receipt else None
-    return out
-
-
-def run_pipeline(image):
-    """Same flow as API: LayoutLM (all questions) → Donut → LLM normalize → receipt JSON."""
+def run_ui(image):
+    """Gradio handler: call shared pipeline and format outputs for UI."""
     if image is None:
         return "Please upload an image.", "", ""
 
-    # 1. LayoutLM with default questions
-    layoutlm_results = []
-    for q in DEFAULT_QUESTIONS:
-        try:
-            raw = layoutlm_model.process(image, q)
-            answer = parse_layoutlm_answer(raw)
-            layoutlm_results.append({"question": q, "answer": answer})
-        except Exception as e:
-            layoutlm_results.append({"question": q, "answer": f"[Error: {e!s}]"})
+    result = process_receipt_image(image)
 
-    # 2. Donut
-    try:
-        donut_raw = donut_model.process(image)
-        if isinstance(donut_raw, str):
-            try:
-                donut_data = json.loads(donut_raw)
-            except json.JSONDecodeError:
-                donut_data = {"_raw_text": donut_raw}
-        elif isinstance(donut_raw, dict):
-            donut_data = donut_raw
-        else:
-            donut_data = {"_raw": str(donut_raw)}
-    except Exception as e:
-        donut_data = {"_error": str(e)}
+    receipt_str = json.dumps(result["receipt"], indent=2, ensure_ascii=False)
+    if result["receipt_meta"] and "_error" in result["receipt_meta"]:
+        receipt_str += "\n\n⚠️ " + result["receipt_meta"]["_error"]
 
-    # 3. LLM normalize (Ollama / Minimax)
-    receipt = normalize_receipt(layoutlm_results, donut_data)
-    receipt_clean = ensure_receipt_schema(receipt)
+    raw_layoutlm = json.dumps(result["layoutlm_results"], indent=2, ensure_ascii=False)
+    raw_donut = json.dumps(result["donut_data"], indent=2, ensure_ascii=False) if isinstance(result["donut_data"], dict) else str(result["donut_data"])
 
-    # Build display strings
-    receipt_str = json.dumps(receipt_clean, indent=2, ensure_ascii=False)
-    if "_error" in receipt:
-        receipt_str = receipt_str + "\n\n⚠️ " + receipt.get("_error", "")
-
-    raw_layoutlm_str = json.dumps(layoutlm_results, indent=2, ensure_ascii=False)
-    raw_donut_str = json.dumps(donut_data, indent=2, ensure_ascii=False) if isinstance(donut_data, dict) else str(donut_data)
-
-    return receipt_str, raw_layoutlm_str, raw_donut_str
+    return receipt_str, raw_layoutlm, raw_donut
 
 
 with gr.Blocks(title="Receipt/Document Analysis") as demo:
     gr.Markdown("# 🧾 Receipt/Document Analysis")
     gr.Markdown(
-        "Upload a receipt image. Same pipeline as the API: **LayoutLM** (fixed questions) → **Donut** → **Ollama** merge → final receipt JSON."
+        "Upload a receipt image. Pipeline: **LayoutLM** → **Donut** → **Ollama** merge → receipt JSON (same as API)."
     )
 
     with gr.Row():
@@ -121,7 +58,7 @@ with gr.Blocks(title="Receipt/Document Analysis") as demo:
                 )
 
     process_btn.click(
-        fn=run_pipeline,
+        fn=run_ui,
         inputs=[image_input],
         outputs=[output_receipt, output_layoutlm, output_donut],
     )
