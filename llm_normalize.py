@@ -82,16 +82,45 @@ def _normalize_via_ollama(layoutlm_results: list, donut_data: dict) -> dict:
     return _parse_ollama_response(text)
 
 
+# Max dimension for vision uploads (Ollama has request body limits). Env: OLLAMA_VISION_MAX_PIXELS (default 2048).
+_VISION_MAX_PIXELS = int(os.environ.get("OLLAMA_VISION_MAX_PIXELS", "2048"))
+_VISION_JPEG_QUALITY = int(os.environ.get("OLLAMA_VISION_JPEG_QUALITY", "88"))
+
+
+def _get_vision_model() -> str:
+    """Model for vision-based extraction (API mode). Prefer OLLAMA_VISION_MODEL, else OLLAMA_MODEL."""
+    return (
+        os.environ.get("OLLAMA_VISION_MODEL", "").strip()
+        or os.environ.get("OLLAMA_MODEL", "llama3.2")
+    )
+
+
+def _prepare_image_for_vision(image):
+    """
+    Resize image if needed and save as JPEG to stay under Ollama request body limits.
+    image: PIL Image (RGB). Returns path to temp .jpg; caller must delete when done.
+    """
+    from PIL import Image as PILImage
+    w, h = image.size
+    max_p = _VISION_MAX_PIXELS
+    if w > max_p or h > max_p:
+        ratio = min(max_p / w, max_p / h)
+        nw, nh = int(w * ratio), int(h * ratio)
+        image = image.resize((nw, nh), getattr(PILImage, "Resampling", PILImage).LANCZOS)
+    fd, path = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd)
+    image.save(path, "JPEG", quality=_VISION_JPEG_QUALITY, optimize=True)
+    return path
+
+
 def _extract_via_ollama_vision(image) -> dict:
     """Send receipt image to Ollama vision model; return receipt dict (RECEIPT_KEYS or _error/_raw)."""
     from ollama import chat, ResponseError
 
-    model = os.environ.get("OLLAMA_MODEL", "llama3.2")
-    fd, path = None, None
+    model = _get_vision_model()
+    path = None
     try:
-        fd, path = tempfile.mkstemp(suffix=".png")
-        os.close(fd)
-        image.save(path)
+        path = _prepare_image_for_vision(image)
         try:
             response = chat(
                 model=model,
@@ -104,7 +133,7 @@ def _extract_via_ollama_vision(image) -> dict:
         except ResponseError as e:
             msg = str(e).strip()
             if "404" in msg or "not found" in msg.lower():
-                return {"_error": f"Ollama model {model!r} not found. Set OLLAMA_MODEL to a vision-capable model (e.g. llava)."}
+                return {"_error": f"Ollama vision model {model!r} not found. Set OLLAMA_VISION_MODEL (e.g. llava, qwen3-vl:8b) or OLLAMA_MODEL."}
             return {"_error": f"Ollama error: {msg}"}
         text = response.message.content if response and response.message else ""
         if not text:
