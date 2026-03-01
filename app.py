@@ -31,7 +31,7 @@ def run_ui(image):
 with gr.Blocks(title="Receipt/Document Analysis") as demo:
     gr.Markdown("# 🧾 Receipt/Document Analysis")
     gr.Markdown(
-        "Upload a receipt image. Pipeline: **LayoutLM** → **Donut** → **Ollama** merge → receipt JSON (same as API)."
+        "Upload a receipt image. **Vision model** (Ollama API) → receipt JSON (same as API)."
     )
 
     with gr.Row():

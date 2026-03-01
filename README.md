@@ -1,16 +1,14 @@
 # 🧾 Receipt OCR
 
-> Extract structured data from receipt images using **LayoutLM**, **Donut**, and an **LLM** — with a shared pipeline for both API and UI.
+> Extract structured data from receipt images using a **vision model** (Ollama API) — with a shared pipeline for both API and UI.
 
 ---
 
 ## Overview
 
-**Receipt OCR** runs a three-stage pipeline on receipt/document images:
+**Receipt OCR** sends receipt images to an **Ollama vision model** and returns structured JSON:
 
-1. **LayoutLM** (document question-answering) — answers fixed questions (store name, date, total, tax, etc.).
-2. **Donut** (document understanding) — full document extraction into structured fields.
-3. **LLM normalization** — merges both outputs into a single, consistent JSON schema (Ollama).
+- **Vision model** (OLLAMA_VISION_MODEL) — image → receipt fields in one step.
 
 The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
@@ -19,25 +17,19 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 ## ✨ Features
 
 - **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
-- **Ollama only**: [Ollama](https://ollama.ai) for LLM merge and (with `PROCESSING_MODE=API`) for vision-based receipt extraction.
+- **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt extraction via API.
 - **Structured output**: Fixed receipt schema: `store_name`, `shop_name`, `date`, `total_amount`, `tax_amount`, `gst_amount`, `sales_tax`, `received`, `payable`.
-- **Optional raw outputs**: API can return LayoutLM Q&A and Donut extraction alongside the merged receipt.
+- **Optional raw**: API response can include `raw.layoutlm` and `raw.donut` (empty in vision-only mode; kept for compatibility).
 
 ---
 
 ## Pipeline
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│ Receipt     │ ──► │ LayoutLM    │ ──► │ Ollama merge     │ ──► │ Normalized      │
-│ Image       │     │ (Q&A)       │     │ (or vision API)  │     │ receipt JSON    │
-└─────────────┘     └─────────────┘     └──────────────────┘     └─────────────────┘
-       │                    │
-       └────────────────────┼────────────────────┐
-                            ▼                    ▼
-                     ┌─────────────┐      Donut (full extraction)
-                     │ Donut       │
-                     └─────────────┘
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│ Receipt     │ ──► │ Vision model     │ ──► │ Normalized      │
+│ Image       │     │ (Ollama API)     │     │ receipt JSON    │
+└─────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
 ---
@@ -45,8 +37,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 ## Prerequisites
 
 - **Python** 3.10+
-- **Ollama** (for local LLM merge): [Install Ollama](https://ollama.ai) and pull a model, e.g. `ollama pull llama3.2`
-- **Optional**: CUDA-capable GPU for faster LayoutLM/Donut inference
+- **Ollama** (or compatible API): [Install Ollama](https://ollama.ai) and pull a vision model, e.g. `ollama pull qwen2-vl:7b` or use a cloud vision model via `OLLAMA_VISION_MODEL`
 
 ---
 
@@ -83,21 +74,19 @@ Copy the example env file and edit as needed:
 cp .env.example .env
 ```
 
-**Minimal `.env` (Ollama):**
+**Minimal `.env`:**
 
 ```env
-# Optional: defaults to llama3.2 if not set
-OLLAMA_MODEL=llama3.2
-# PROCESSING_MODE=LOCAL (LayoutLM + Donut + merge) or API (image → Ollama vision → JSON)
-PROCESSING_MODE=LOCAL
+# Required: vision model for receipt extraction (e.g. qwen2-vl:7b, llava)
+OLLAMA_VISION_MODEL=qwen2-vl:7b
 ```
 
 **API behavior:**
 
 - `API_MODE=async` (default) — `POST /api/process` returns **202** with `job_id`; processing runs in the background and results are sent to `CALLBACK_URL`.
 - `API_MODE=sync` — `POST /api/process` blocks until done and returns **200** with receipt JSON (no callback).
-- `INCLUDE_RAW=true` (default) — callback payload (async) or response (sync) includes `raw.layoutlm` and `raw.donut`.
-- `INCLUDE_RAW=false` — callback/response contains only `receipt` (and `receipt_meta` if there was an LLM error).
+- `INCLUDE_RAW=true` (default) — callback payload (async) or response (sync) includes `raw.layoutlm` and `raw.donut` (empty in vision-only mode).
+- `INCLUDE_RAW=false` — callback/response contains only `receipt` (and `receipt_meta` if there was an error).
 - `CALLBACK_URL` — URL to POST results to when a job completes (async mode only). Required for receiving results in async; see [Async API and callback](#async-api-and-callback) below.
 
 ---
@@ -106,15 +95,14 @@ PROCESSING_MODE=LOCAL
 
 ### Option A — Gradio UI (easiest)
 
-1. Start Ollama (if using local LLM):  
-   `ollama serve` and `ollama pull llama3.2` (or your chosen model).
+1. Set `OLLAMA_VISION_MODEL` in `.env` and ensure Ollama (or your API) is running with that vision model.
 2. Run the app:
 
 ```bash
 python app.py
 ```
 
-3. Open the URL in your browser (e.g. http://127.0.0.1:7860), upload a receipt image, and click **Process**. You’ll see the merged receipt JSON and optional raw LayoutLM/Donut outputs.
+3. Open the URL in your browser (e.g. http://127.0.0.1:7860), upload a receipt image, and click **Process**. You’ll see the receipt JSON from the vision model.
 
 ---
 
@@ -150,14 +138,6 @@ curl -X POST http://localhost:5050/api/process -F "image=@/path/to/receipt.jpg"
 curl -X POST http://localhost:5050/api/process \
   -H "Content-Type: application/json" \
   -d '{"image_path": "C:\\path\\to\\receipt.png"}'
-```
-
-**Optional custom questions (JSON array in form):**
-
-```bash
-curl -X POST http://localhost:5050/api/process \
-  -F "image=@receipt.jpg" \
-  -F 'questions=["What is the store name?","What is the total?"]'
 ```
 
 **Example response (async, 202 Accepted):**
@@ -196,13 +176,13 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
     "payable": 12.50
   },
   "raw": {
-    "layoutlm": [{"question": "...", "answer": "..."}],
-    "donut": { ... }
+    "layoutlm": [],
+    "donut": {}
   }
 }
 ```
 
-If `INCLUDE_RAW=false`, the payload omits `raw`. If the LLM step had issues, `receipt_meta` may be present with `_error` or `_raw`.
+If `INCLUDE_RAW=false`, the payload omits `raw`. If extraction had issues, `receipt_meta` may be present with `_error` or `_raw`.
 
 **Failure payload:**
 
@@ -228,9 +208,7 @@ image = Image.open("receipt.jpg").convert("RGB")
 result = process_receipt_image(image)
 
 print(result["receipt"])           # Normalized receipt (RECEIPT_KEYS only)
-print(result["layoutlm_results"])  # LayoutLM Q&A list
-print(result["donut_data"])        # Donut extraction dict
-print(result["receipt_meta"])      # None or {_error, _raw} if LLM failed
+print(result["receipt_meta"])      # None or {_error, _raw} if extraction failed
 ```
 
 ---
@@ -259,11 +237,8 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 receiptOcr/
 ├── api.py           # Flask API (POST /api/process async → 202 + job_id; GET /health)
 ├── app.py           # Gradio UI
-├── pipeline.py      # Shared pipeline: LayoutLM → Donut → LLM → receipt JSON
-├── llm_normalize.py # LLM merge (Ollama only)
-├── models/
-│   ├── layoutlm.py  # LayoutLM document Q&A
-│   └── donut.py     # Donut document extraction
+├── pipeline.py      # Shared pipeline: image → vision model → receipt JSON
+├── llm_normalize.py # Vision extraction (Ollama API)
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -278,24 +253,6 @@ For production, run the Flask app with Gunicorn:
 ```bash
 gunicorn -w 1 -b 0.0.0.0:5050 api:app
 ```
-
-Use `-w 1` if your LayoutLM/Donut models are loaded in process and you want to avoid multiple heavy workers.
-
-### Running under systemd (Tesseract)
-
-The LayoutLM pipeline uses **Tesseract** (via pytesseract). When the app runs under systemd, the service has a minimal PATH and may not find the `tesseract` binary. Two options:
-
-1. **Set the path in the app** (recommended): In `.env` or in the systemd unit, set:
-   ```bash
-   TESSERACT_CMD=/usr/bin/tesseract
-   ```
-   (Use the path from `which tesseract` on your system.) The app configures pytesseract at startup so the document-QA pipeline can call Tesseract.
-
-2. **Set PATH in the systemd unit**: In `/etc/systemd/system/myflaskapp.service`, add a line so the service sees the same PATH as your shell, e.g.:
-   ```ini
-   Environment=PATH=/usr/local/bin:/usr/bin:/bin
-   ```
-   Then run `sudo systemctl daemon-reload && sudo systemctl restart myflaskapp`.
 
 ---
 

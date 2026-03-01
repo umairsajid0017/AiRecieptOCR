@@ -20,7 +20,7 @@ load_dotenv()
 from flask import Flask, request, jsonify
 from PIL import Image
 
-from pipeline import process_receipt_image, DEFAULT_QUESTIONS
+from pipeline import process_receipt_image
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -213,7 +213,7 @@ def process():
     if err:
         return jsonify({"error": err}), 400
 
-    questions = DEFAULT_QUESTIONS
+    questions = []
     if request.form.get("questions"):
         try:
             q = json.loads(request.form["questions"])

@@ -1,42 +1,41 @@
 """
-Test Ollama normalization using the same code as the real API (llm_normalize.normalize_receipt).
+Test vision-based receipt extraction (same code path as the API).
 Run with: python test_ollama.py
-Make sure .env is loaded (OLLAMA_MODEL) and Ollama is running (e.g. on 11434).
+Requires OLLAMA_VISION_MODEL in .env and an image path as first argument, or a small test image.
 """
 import json
 import os
+import sys
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from llm_normalize import normalize_receipt
+from llm_normalize import extract_receipt_from_image
 
-# Fake inputs like what the API would pass after LayoutLM + Donut
-FAKE_LAYOUTLM = [
-    {"question": "What is the store or business name?", "answer": "ABC Store"},
-    {"question": "What is the shop name?", "answer": "ABC Store"},
-    {"question": "What is the date on the receipt?", "answer": "2024-01-15"},
-    {"question": "What is the total amount?", "answer": "42.50"},
-    {"question": "What is the tax amount?", "answer": "3.50"},
-    {"question": "What is the GST amount?", "answer": "3.50"},
-    {"question": "What is the sales tax?", "answer": "3.50"},
-    {"question": "What is the amount received?", "answer": "50.00"},
-    {"question": "What is the amount payable?", "answer": "42.50"},
-]
-FAKE_DONUT = {
-    "header": {"vendor": "ABC Store", "date": "2024-01-15"},
-    "summary": {"total": "42.50", "tax": "3.50"},
-}
+def main():
+    model = os.environ.get("OLLAMA_VISION_MODEL", "").strip()
+    if not model:
+        print("OLLAMA_VISION_MODEL is not set in .env. Set it to a vision model (e.g. qwen3-vl:8b, llava).")
+        sys.exit(1)
+    print(f"OLLAMA_VISION_MODEL = {model!r}")
 
-if __name__ == "__main__":
-    model = os.environ.get("OLLAMA_MODEL", "llama3.2")
-    print(f"OLLAMA_MODEL = {model!r}")
-    print("Calling normalize_receipt (same as API)...")
+    image_path = (sys.argv[1:2] or [""])[0].strip()
+    if not image_path or not os.path.isfile(image_path):
+        print("Usage: python test_ollama.py <path-to-receipt-image>")
+        print("  Or set image path as first argument.")
+        sys.exit(1)
+
+    from PIL import Image
+    image = Image.open(image_path).convert("RGB")
+    print("Calling extract_receipt_from_image (vision API)...")
+    result = extract_receipt_from_image(image)
     print()
-    result = normalize_receipt(FAKE_LAYOUTLM, FAKE_DONUT)
     print("Result:")
     print(json.dumps(result, indent=2, ensure_ascii=False))
     if "_error" in result:
-        print("\n--> Ollama test failed (check model name and 'ollama list')")
-    else:
-        print("\n--> Ollama test OK")
+        print("\n--> Vision extraction failed (check model name and Ollama/API)")
+        sys.exit(1)
+    print("\n--> Vision extraction OK")
+
+if __name__ == "__main__":
+    main()
