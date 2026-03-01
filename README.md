@@ -281,6 +281,22 @@ gunicorn -w 1 -b 0.0.0.0:5050 api:app
 
 Use `-w 1` if your LayoutLM/Donut models are loaded in process and you want to avoid multiple heavy workers.
 
+### Running under systemd (Tesseract)
+
+The LayoutLM pipeline uses **Tesseract** (via pytesseract). When the app runs under systemd, the service has a minimal PATH and may not find the `tesseract` binary. Two options:
+
+1. **Set the path in the app** (recommended): In `.env` or in the systemd unit, set:
+   ```bash
+   TESSERACT_CMD=/usr/bin/tesseract
+   ```
+   (Use the path from `which tesseract` on your system.) The app configures pytesseract at startup so the document-QA pipeline can call Tesseract.
+
+2. **Set PATH in the systemd unit**: In `/etc/systemd/system/myflaskapp.service`, add a line so the service sees the same PATH as your shell, e.g.:
+   ```ini
+   Environment=PATH=/usr/local/bin:/usr/bin:/bin
+   ```
+   Then run `sudo systemctl daemon-reload && sudo systemctl restart myflaskapp`.
+
 ---
 
 ## License
