@@ -1,10 +1,11 @@
 """
 LLM normalization: merge LayoutLM + Donut raw outputs into a fixed receipt JSON schema.
-Supports Ollama (local, ollama package) and Minimax M2.5 (cloud API).
+Uses Ollama only. PROCESSING_MODE=API: send receipt image directly to Ollama (vision), return JSON only.
 """
 import json
 import os
 import re
+import tempfile
 
 RECEIPT_KEYS = [
     "store_name", "shop_name", "date", "total_amount", "tax_amount",
@@ -23,6 +24,11 @@ SYSTEM_PROMPT = """You are a receipt data extractor. You will receive two raw ou
 - payable (number or string): amount payable
 
 Output ONLY valid JSON with these keys. No markdown, no explanation. Prefer numbers for amount fields when possible."""
+
+# When PROCESSING_MODE=API: image is sent to LLM; instruct it to return only this JSON.
+API_VISION_PROMPT = """Look at this receipt image. Extract the following fields and return ONLY a JSON object with exactly these keys (use null for any missing value). No markdown, no explanation, no other text—only the JSON.
+Keys: store_name, shop_name, date, total_amount, tax_amount, gst_amount, sales_tax, received, payable.
+Prefer numbers for amount fields when possible."""
 
 
 def _parse_ollama_response(text: str) -> dict:
@@ -76,44 +82,49 @@ def _normalize_via_ollama(layoutlm_results: list, donut_data: dict) -> dict:
     return _parse_ollama_response(text)
 
 
-def _normalize_via_minimax(layoutlm_results: list, donut_data: dict) -> dict:
-    import requests
+def _extract_via_ollama_vision(image) -> dict:
+    """Send receipt image to Ollama vision model; return receipt dict (RECEIPT_KEYS or _error/_raw)."""
+    from ollama import chat, ResponseError
 
-    api_key = os.environ.get("MINIMAX_API_KEY")
-    if not api_key:
-        return {"_error": "MINIMAX_API_KEY not set"}
-    base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io").rstrip("/")
-    url = f"{base_url}/v1/chat/completions"
-    user_content = (
-        "LayoutLM (question-answering) results:\n"
-        + json.dumps(layoutlm_results, indent=2, ensure_ascii=False)
-        + "\n\nDonut (full extraction) result:\n"
-        + json.dumps(donut_data, indent=2, ensure_ascii=False)
-    )
-    payload = {
-        "model": os.environ.get("MINIMAX_MODEL", "MiniMax-M2.5"),
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    model = os.environ.get("OLLAMA_MODEL", "llama3.2")
+    fd, path = None, None
     try:
-        r = requests.post(url, json=payload, headers=headers, timeout=120)
-        r.raise_for_status()
-        data = r.json()
-        choices = data.get("choices") or []
-        if not choices:
-            return {"_error": "No choices in Minimax response"}
-        text = choices[0].get("message", {}).get("content", "")
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        image.save(path)
+        try:
+            response = chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You extract receipt data. You must respond with only valid JSON, nothing else."},
+                    {"role": "user", "content": API_VISION_PROMPT, "images": [path]},
+                ],
+                format="json",
+            )
+        except ResponseError as e:
+            msg = str(e).strip()
+            if "404" in msg or "not found" in msg.lower():
+                return {"_error": f"Ollama model {model!r} not found. Set OLLAMA_MODEL to a vision-capable model (e.g. llava)."}
+            return {"_error": f"Ollama error: {msg}"}
+        text = response.message.content if response and response.message else ""
         if not text:
-            return {"_error": "Empty content from Minimax"}
+            return {"_error": "Empty response from Ollama"}
         return _parse_ollama_response(text)
-    except Exception as e:
-        return {"_error": str(e)}
+    finally:
+        if path and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def extract_receipt_from_image(image) -> dict:
+    """
+    PROCESSING_MODE=API: send receipt image directly to Ollama (vision). Return receipt dict
+    with RECEIPT_KEYS; may include _error or _raw on failure.
+    image: PIL Image (RGB).
+    """
+    return _extract_via_ollama_vision(image)
 
 
 def normalize_receipt(layoutlm_results: list, donut_data: dict) -> dict:
@@ -127,7 +138,4 @@ def normalize_receipt(layoutlm_results: list, donut_data: dict) -> dict:
 
     Returns dict with RECEIPT_KEYS; may include _error or _raw on failure.
     """
-    provider = (os.environ.get("LLM_PROVIDER") or "ollama").strip().lower()
-    if provider == "minimax":
-        return _normalize_via_minimax(layoutlm_results, donut_data)
     return _normalize_via_ollama(layoutlm_results, donut_data)

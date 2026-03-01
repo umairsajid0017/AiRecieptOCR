@@ -1,12 +1,14 @@
 """
 Shared receipt pipeline: LayoutLM (QA) → Donut (extraction) → LLM normalize → receipt JSON.
 Used by both api.py (Flask) and app.py (Gradio). Single source of truth.
+PROCESSING_MODE=API: upload image to LLM directly (vision), return JSON only; queue/inline unchanged.
 """
 import json
+import os
 
 from models.layoutlm import LayoutLMQA
 from models.donut import DonutExtractor
-from llm_normalize import normalize_receipt, RECEIPT_KEYS
+from llm_normalize import normalize_receipt, extract_receipt_from_image, RECEIPT_KEYS
 
 # Default questions for LayoutLM (same schema as receipt output)
 DEFAULT_QUESTIONS = [
@@ -73,6 +75,19 @@ def process_receipt_image(image, questions=None):
     """
     if questions is None:
         questions = DEFAULT_QUESTIONS
+
+    processing_mode = (os.environ.get("PROCESSING_MODE") or "LOCAL").strip().upper()
+    if processing_mode == "API":
+        receipt = extract_receipt_from_image(image)
+        receipt_clean = ensure_receipt_schema(receipt)
+        has_error = "_error" in receipt or "_raw" in receipt
+        receipt_meta = {k: v for k, v in receipt.items() if k in ("_error", "_raw")} if has_error else None
+        return {
+            "receipt": receipt_clean,
+            "receipt_meta": receipt_meta,
+            "layoutlm_results": [],
+            "donut_data": {},
+        }
 
     layoutlm_results = []
     layoutlm = get_layoutlm()

@@ -10,7 +10,7 @@
 
 1. **LayoutLM** (document question-answering) — answers fixed questions (store name, date, total, tax, etc.).
 2. **Donut** (document understanding) — full document extraction into structured fields.
-3. **LLM normalization** — merges both outputs into a single, consistent JSON schema (Ollama or Minimax).
+3. **LLM normalization** — merges both outputs into a single, consistent JSON schema (Ollama).
 
 The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
@@ -19,7 +19,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 ## ✨ Features
 
 - **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
-- **Flexible LLM backend**: Local [Ollama](https://ollama.ai) (default) or cloud [Minimax](https://www.minimax.io) for merging.
+- **Ollama only**: [Ollama](https://ollama.ai) for LLM merge and (with `PROCESSING_MODE=API`) for vision-based receipt extraction.
 - **Structured output**: Fixed receipt schema: `store_name`, `shop_name`, `date`, `total_amount`, `tax_amount`, `gst_amount`, `sales_tax`, `received`, `payable`.
 - **Optional raw outputs**: API can return LayoutLM Q&A and Donut extraction alongside the merged receipt.
 
@@ -29,8 +29,8 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│ Receipt     │ ──► │ LayoutLM    │ ──► │ LLM (Ollama /    │ ──► │ Normalized      │
-│ Image       │     │ (Q&A)       │     │ Minimax) merge   │     │ receipt JSON    │
+│ Receipt     │ ──► │ LayoutLM    │ ──► │ Ollama merge     │ ──► │ Normalized      │
+│ Image       │     │ (Q&A)       │     │ (or vision API)  │     │ receipt JSON    │
 └─────────────┘     └─────────────┘     └──────────────────┘     └─────────────────┘
        │                    │
        └────────────────────┼────────────────────┐
@@ -83,21 +83,13 @@ Copy the example env file and edit as needed:
 cp .env.example .env
 ```
 
-**Minimal `.env` (Ollama, default):**
+**Minimal `.env` (Ollama):**
 
 ```env
 # Optional: defaults to llama3.2 if not set
 OLLAMA_MODEL=llama3.2
-```
-
-**Using Minimax instead of Ollama:**
-
-```env
-LLM_PROVIDER=minimax
-MINIMAX_API_KEY=your_api_key_here
-# Optional
-MINIMAX_BASE_URL=https://api.minimax.io
-MINIMAX_MODEL=MiniMax-M2.5
+# PROCESSING_MODE=LOCAL (LayoutLM + Donut + merge) or API (image → Ollama vision → JSON)
+PROCESSING_MODE=LOCAL
 ```
 
 **API behavior:**
@@ -268,7 +260,7 @@ receiptOcr/
 ├── api.py           # Flask API (POST /api/process async → 202 + job_id; GET /health)
 ├── app.py           # Gradio UI
 ├── pipeline.py      # Shared pipeline: LayoutLM → Donut → LLM → receipt JSON
-├── llm_normalize.py # LLM merge (Ollama / Minimax)
+├── llm_normalize.py # LLM merge (Ollama only)
 ├── models/
 │   ├── layoutlm.py  # LayoutLM document Q&A
 │   └── donut.py     # Donut document extraction
