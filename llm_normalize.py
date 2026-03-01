@@ -7,13 +7,12 @@ import re
 import tempfile
 
 RECEIPT_KEYS = [
-    "store_name", "shop_name", "date", "total_amount", "tax_amount",
-    "gst_amount", "sales_tax", "received", "payable",
+    "shop_name", "date", "total_amount", "tax_amount", "tax_percentage"
 ]
 
 API_VISION_PROMPT = """Look at this receipt image. Extract the following fields and return ONLY a JSON object with exactly these keys (use null for any missing value). No markdown, no explanation, no other text—only the JSON.
-Keys: store_name, shop_name, date, total_amount, tax_amount, gst_amount, sales_tax, received, payable.
-Prefer numbers for amount fields when possible."""
+Keys: shop_name, date, total_amount, tax_amount, tax_percentage.
+Prefer numbers for amount fields when possible. The text can be GST, sales tax, or other taxes, so if all other taxes merge them, the text amount should be very critical."""
 
 
 def _parse_ollama_response(text: str) -> dict:
