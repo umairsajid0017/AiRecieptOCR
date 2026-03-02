@@ -65,7 +65,48 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Environment configuration
+### 4. Optional: Automated setup & systemd service
+
+If you'd like an automated way to install system deps, create the virtual environment, and run the app as a systemd service, use the included `setup_ai_ocr.sh` script. The script will:
+
+- Install OS packages (when a supported package manager is detected).
+- Create a Python virtual environment at `myenv` in the project root.
+- Install `requirements.txt` into the virtualenv.
+- Write a systemd unit at `/etc/systemd/system/ai_ocr.service` using the invoking sudo user (or the current user) and the project path.
+- Enable and start the service, serving the Flask API on port 5050.
+
+Run the script from the project root:
+
+```bash
+sudo ./setup_ai_ocr.sh
+```
+
+Service management (common commands):
+
+```bash
+# Check status
+sudo systemctl status ai_ocr.service
+
+# Follow logs
+sudo journalctl -u ai_ocr.service -f
+
+# Restart after changes
+sudo systemctl restart ai_ocr.service
+
+# Stop the service
+sudo systemctl stop ai_ocr.service
+```
+
+If you need to change the service user, port, or other options, edit `/etc/systemd/system/ai_ocr.service`, then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart ai_ocr.service
+```
+
+Note: The script creates a virtualenv at `myenv` and the service runs the app with the venv Python and `gunicorn` on port 5050 by default.
+
+### 5. Environment configuration
 
 Copy the example env file and edit as needed:
 
