@@ -19,13 +19,10 @@ def run_ui(image):
     result = process_receipt_image(image)
 
     receipt_str = json.dumps(result["receipt"], indent=2, ensure_ascii=False)
-    if result["receipt_meta"] and "_error" in result["receipt_meta"]:
+    if result.get("receipt_meta") and "_error" in result["receipt_meta"]:
         receipt_str += "\n\n⚠️ " + result["receipt_meta"]["_error"]
 
-    raw_layoutlm = json.dumps(result["layoutlm_results"], indent=2, ensure_ascii=False)
-    raw_donut = json.dumps(result["donut_data"], indent=2, ensure_ascii=False) if isinstance(result["donut_data"], dict) else str(result["donut_data"])
-
-    return receipt_str, raw_layoutlm, raw_donut
+    return receipt_str
 
 
 with gr.Blocks(title="Receipt/Document Analysis") as demo:
@@ -45,22 +42,11 @@ with gr.Blocks(title="Receipt/Document Analysis") as demo:
                 lines=14,
                 interactive=False,
             )
-            with gr.Accordion("Raw outputs", open=False):
-                output_layoutlm = gr.Textbox(
-                    label="LayoutLM Q&A",
-                    lines=8,
-                    interactive=False,
-                )
-                output_donut = gr.Textbox(
-                    label="Donut extraction",
-                    lines=8,
-                    interactive=False,
-                )
 
     process_btn.click(
         fn=run_ui,
         inputs=[image_input],
-        outputs=[output_receipt, output_layoutlm, output_donut],
+        outputs=[output_receipt],
     )
 
 if __name__ == "__main__":

@@ -125,19 +125,12 @@ def _send_callback(job_id, payload):
     logger.error("Callback failed after %s attempts for job_id=%s", CALLBACK_RETRIES + 1, job_id)
 
 
-def _include_raw():
-    return os.environ.get("INCLUDE_RAW", "true").strip().lower() in ("1", "true", "yes")
 
 
 def _build_receipt_response(result):
     """Build JSON response dict from pipeline result (for sync mode)."""
     response = {"receipt": result["receipt"]}
-    if _include_raw():
-        response["raw"] = {
-            "layoutlm": result["layoutlm_results"],
-            "donut": result["donut_data"],
-        }
-    if result["receipt_meta"]:
+    if result.get("receipt_meta"):
         response["receipt_meta"] = result["receipt_meta"]
     return response
 
@@ -181,12 +174,7 @@ def _worker():
                 "status": "completed",
                 "receipt": result["receipt"],
             }
-            if _include_raw():
-                payload["raw"] = {
-                    "layoutlm": result["layoutlm_results"],
-                    "donut": result["donut_data"],
-                }
-            if result["receipt_meta"]:
+            if result.get("receipt_meta"):
                 payload["receipt_meta"] = result["receipt_meta"]
             _send_callback(job_id, payload)
         finally:

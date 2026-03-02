@@ -19,7 +19,6 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 - **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
 - **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt extraction via API.
 - **Structured output**: Fixed receipt schema: `store_name`, `shop_name`, `date`, `total_amount`, `tax_amount`, `gst_amount`, `sales_tax`, `received`, `payable`.
-- **Optional raw**: API response can include `raw.layoutlm` and `raw.donut` (empty in vision-only mode; kept for compatibility).
 
 ---
 
@@ -85,8 +84,7 @@ OLLAMA_VISION_MODEL=qwen2-vl:7b
 
 - `API_MODE=async` (default) — `POST /api/process` returns **202** with `job_id`; processing runs in the background and results are sent to `CALLBACK_URL`.
 - `API_MODE=sync` — `POST /api/process` blocks until done and returns **200** with receipt JSON (no callback).
-- `INCLUDE_RAW=true` (default) — callback payload (async) or response (sync) includes `raw.layoutlm` and `raw.donut` (empty in vision-only mode).
-- `INCLUDE_RAW=false` — callback/response contains only `receipt` (and `receipt_meta` if there was an error).
+- `INCLUDE_RAW` is ignored; responses contain only `receipt` (and `receipt_meta` if there was an error).
 - `CALLBACK_URL` — URL to POST results to when a job completes (async mode only). Required for receiving results in async; see [Async API and callback](#async-api-and-callback) below.
 
 ---
@@ -174,10 +172,6 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
     "sales_tax": null,
     "received": 15.00,
     "payable": 12.50
-  },
-  "raw": {
-    "layoutlm": [],
-    "donut": {}
   }
 }
 ```

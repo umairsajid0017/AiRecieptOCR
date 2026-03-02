@@ -24,14 +24,12 @@ def process_receipt_image(image, questions=None):
 
     Args:
         image: PIL Image (RGB).
-        questions: Unused (kept for API compatibility).
+        questions: Unused.
 
     Returns:
         dict with:
             receipt: normalized dict (RECEIPT_KEYS only).
             receipt_meta: None or dict with _error/_raw if extraction failed.
-            layoutlm_results: [] (kept for API compatibility).
-            donut_data: {} (kept for API compatibility).
     """
     receipt = extract_receipt_from_image(image)
     receipt_clean = ensure_receipt_schema(receipt)
@@ -40,6 +38,4 @@ def process_receipt_image(image, questions=None):
     return {
         "receipt": receipt_clean,
         "receipt_meta": receipt_meta,
-        "layoutlm_results": [],
-        "donut_data": {},
     }
