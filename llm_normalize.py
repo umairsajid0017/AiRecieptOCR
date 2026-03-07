@@ -7,11 +7,12 @@ import re
 import tempfile
 
 RECEIPT_KEYS = [
-    "shop_name", "date", "total_amount", "tax_amount", "tax_percentage"
+    "shop_name", "date", "total_amount", "tax_amount", "tax_percentage", "category"
 ]
 
 API_VISION_PROMPT = """Look at this receipt image. Extract the following fields and return ONLY a JSON object with exactly these keys (use null for any missing value). No markdown, no explanation, no other text—only the JSON.
-Keys: shop_name, date, total_amount, tax_amount, tax_percentage.
+Keys: shop_name, date, total_amount, tax_amount, tax_percentage, category.
+For 'category', auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
 Prefer numbers for amount fields when possible. The text can be GST, sales tax, or other taxes, so if all other taxes merge them, the text amount should be very critical."""
 
 

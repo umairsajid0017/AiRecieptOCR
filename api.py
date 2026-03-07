@@ -129,7 +129,10 @@ def _send_callback(job_id, payload):
 
 def _build_receipt_response(result):
     """Build JSON response dict from pipeline result (for sync mode)."""
-    response = {"receipt": result["receipt"]}
+    response = {
+        "receipt": result["receipt"],
+        "category": result["receipt"].get("category")
+    }
     if result.get("receipt_meta"):
         response["receipt_meta"] = result["receipt_meta"]
     return response
@@ -173,6 +176,7 @@ def _worker():
                 "job_id": job_id,
                 "status": "completed",
                 "receipt": result["receipt"],
+                "category": result["receipt"].get("category"),
             }
             if result.get("receipt_meta"):
                 payload["receipt_meta"] = result["receipt_meta"]
