@@ -24,12 +24,13 @@ RECEIPT_KEYS = [
     "exchange_rate",
     "net_amount",
     "confidence_scores",
+    "document_type",
     "document_type_confidence",
 ]
 
 API_VISION_PROMPT = """Look at this receipt or invoice image and extract data.
 Return ONLY a JSON object with exactly these keys (use null for missing values):
-shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, confidence_scores, document_type_confidence.
+shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, confidence_scores, document_type, document_type_confidence.
 
 Field rules:
 - date: ISO format YYYY-MM-DD when possible.
@@ -39,6 +40,7 @@ Field rules:
 - card_last_4: string containing exactly 4 digits when available.
 - line_items: array of objects with keys {description, quantity, unit_price, total, tax_amount}. Use empty array [] if nothing can be extracted.
 - confidence_scores: object map with confidence values from 0 to 1 for key fields (e.g. {"total_amount": 0.98, "date": 0.85}).
+- document_type: one of INVOICE or RECEIPT.
 - document_type_confidence: confidence from 0 to 1 that this is a valid tax invoice/receipt document.
 - category: auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
 
@@ -132,6 +134,28 @@ def _normalize_confidence_score(value):
     return number
 
 
+def _normalize_document_type(value):
+    """Normalize document type to INVOICE or RECEIPT."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    raw = value.strip().upper().replace("-", "_").replace(" ", "_")
+    if not raw:
+        return None
+    if raw in {"INVOICE", "RECEIPT"}:
+        return raw
+    aliases = {
+        "TAX_INVOICE": "INVOICE",
+        "INVO": "INVOICE",
+        "BILL": "INVOICE",
+        "SIMPLIFIED_RECEIPT": "RECEIPT",
+        "SALES_RECEIPT": "RECEIPT",
+        "SLIP": "RECEIPT",
+    }
+    return aliases.get(raw)
+
+
 def _normalize_line_items(value):
     """Normalize line items into a stable list schema."""
     if not isinstance(value, list):
@@ -190,6 +214,7 @@ def _parse_ollama_response(text: str) -> dict:
         receipt["confidence_scores"] = normalized_confidence_scores
     else:
         receipt["confidence_scores"] = {}
+    receipt["document_type"] = _normalize_document_type(receipt.get("document_type"))
     receipt["document_type_confidence"] = _normalize_confidence_score(receipt.get("document_type_confidence"))
 
     if isinstance(receipt.get("vendor_tax_id"), str):

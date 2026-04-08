@@ -232,6 +232,7 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
       "total_amount": 0.99,
       "date": 0.95
     },
+    "document_type": "RECEIPT",
     "document_type_confidence": 0.97
   }
 }
@@ -291,6 +292,7 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 | `exchange_rate` | Currency conversion rate |
 | `net_amount`  | Net amount before tax      |
 | `confidence_scores` | Field confidence map |
+| `document_type` | INVOICE or RECEIPT       |
 | `document_type_confidence` | Receipt/invoice confidence |
 
 ---
