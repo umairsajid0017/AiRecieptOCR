@@ -18,7 +18,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
 - **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
 - **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt extraction via API.
-- **Structured output**: Fixed receipt schema: `store_name`, `shop_name`, `date`, `total_amount`, `tax_amount`, `gst_amount`, `sales_tax`, `received`, `payable`.
+- **Structured output**: Fixed receipt schema with accounting-ready metadata, including VAT, invoice reference, payment details, line items, currency, and confidence scores.
 
 ---
 
@@ -204,15 +204,35 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
   "receipt": {
-    "store_name": "Coffee Shop",
     "shop_name": "Coffee Shop",
     "date": "2024-01-15",
     "total_amount": 12.50,
     "tax_amount": 1.25,
-    "gst_amount": null,
-    "sales_tax": null,
-    "received": 15.00,
-    "payable": 12.50
+    "tax_percentage": 10.00,
+    "category": "Food",
+    "vendor_tax_id": "GB123456789",
+    "invoice_number": "INV-99821",
+    "reference": "RCP-001",
+    "vendor_address": "235 Regent St., London W1B 2EL",
+    "line_items": [
+      {
+        "description": "Coffee",
+        "quantity": 1.0,
+        "unit_price": 11.25,
+        "total": 11.25,
+        "tax_amount": 1.25
+      }
+    ],
+    "payment_method": "CREDIT_CARD",
+    "card_last_4": "4242",
+    "currency_code": "GBP",
+    "exchange_rate": 1.0,
+    "net_amount": 11.25,
+    "confidence_scores": {
+      "total_amount": 0.99,
+      "date": 0.95
+    },
+    "document_type_confidence": 0.97
   }
 }
 ```
@@ -254,15 +274,24 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 
 | Key           | Description                |
 |---------------|----------------------------|
-| `store_name`  | Store or business name     |
 | `shop_name`   | Shop name                  |
 | `date`        | Transaction date           |
 | `total_amount`| Total amount               |
 | `tax_amount`  | Tax amount                 |
-| `gst_amount`  | GST amount                 |
-| `sales_tax`   | Sales tax                  |
-| `received`    | Amount received            |
-| `payable`     | Amount payable             |
+| `tax_percentage` | Tax percentage          |
+| `category`    | Auto-detected category     |
+| `vendor_tax_id` | VAT/tax registration ID |
+| `invoice_number` | Invoice number          |
+| `reference`   | Receipt/reference ID       |
+| `vendor_address` | Vendor address          |
+| `line_items`  | Itemized lines             |
+| `payment_method` | CASH/CREDIT/DEBIT/BANK |
+| `card_last_4` | Last 4 digits of card      |
+| `currency_code` | ISO 3-letter currency    |
+| `exchange_rate` | Currency conversion rate |
+| `net_amount`  | Net amount before tax      |
+| `confidence_scores` | Field confidence map |
+| `document_type_confidence` | Receipt/invoice confidence |
 
 ---
 

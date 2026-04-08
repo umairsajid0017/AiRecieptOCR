@@ -7,13 +7,140 @@ import re
 import tempfile
 
 RECEIPT_KEYS = [
-    "shop_name", "date", "total_amount", "tax_amount", "tax_percentage", "category"
+    "shop_name",
+    "date",
+    "total_amount",
+    "tax_amount",
+    "tax_percentage",
+    "category",
+    "vendor_tax_id",
+    "invoice_number",
+    "reference",
+    "vendor_address",
+    "line_items",
+    "payment_method",
+    "card_last_4",
+    "currency_code",
+    "exchange_rate",
+    "net_amount",
+    "confidence_scores",
+    "document_type_confidence",
 ]
 
-API_VISION_PROMPT = """Look at this receipt image. Extract the following fields and return ONLY a JSON object with exactly these keys (use null for any missing value). No markdown, no explanation, no other text—only the JSON.
-Keys: shop_name, date, total_amount, tax_amount, tax_percentage, category.
-For 'category', auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
-Prefer numbers for amount fields when possible. The text can be GST, sales tax, or other taxes, so if all other taxes merge them, the text amount should be very critical."""
+API_VISION_PROMPT = """Look at this receipt or invoice image and extract data.
+Return ONLY a JSON object with exactly these keys (use null for missing values):
+shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, confidence_scores, document_type_confidence.
+
+Field rules:
+- date: ISO format YYYY-MM-DD when possible.
+- total_amount, tax_amount, tax_percentage, exchange_rate, net_amount: numeric.
+- currency_code: 3-letter ISO code like GBP, EUR, USD.
+- payment_method: one of CASH, CREDIT_CARD, DEBIT_CARD, BANK_TRANSFER, OTHER.
+- card_last_4: string containing exactly 4 digits when available.
+- line_items: array of objects with keys {description, quantity, unit_price, total, tax_amount}. Use empty array [] if nothing can be extracted.
+- confidence_scores: object map with confidence values from 0 to 1 for key fields (e.g. {"total_amount": 0.98, "date": 0.85}).
+- document_type_confidence: confidence from 0 to 1 that this is a valid tax invoice/receipt document.
+- category: auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
+
+No markdown, no explanation, no extra keys, only JSON."""
+
+
+def _to_float(value):
+    """Best-effort numeric coercion for amount/confidence fields."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        # Keep digits, sign, decimal separators; normalize commas in numbers.
+        cleaned = cleaned.replace(",", "")
+        cleaned = re.sub(r"[^0-9.\-+]", "", cleaned)
+        if cleaned in {"", "-", "+", ".", "-.", "+."}:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def _normalize_payment_method(value):
+    """Normalize payment method to known enum."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    raw = value.strip().upper().replace(" ", "_").replace("-", "_")
+    if not raw:
+        return None
+    if raw in {"CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "OTHER"}:
+        return raw
+    aliases = {
+        "CARD": "CREDIT_CARD",
+        "CREDIT": "CREDIT_CARD",
+        "DEBIT": "DEBIT_CARD",
+        "BANK": "BANK_TRANSFER",
+        "TRANSFER": "BANK_TRANSFER",
+        "WIRE": "BANK_TRANSFER",
+    }
+    return aliases.get(raw, "OTHER")
+
+
+def _normalize_currency_code(value):
+    """Normalize currency to 3-letter uppercase ISO-like code."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    code = re.sub(r"[^A-Za-z]", "", value).upper()
+    return code[:3] if code else None
+
+
+def _normalize_last_4(value):
+    """Extract the last 4 digits from card details if present."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    digits = "".join(re.findall(r"\d", value))
+    if len(digits) < 4:
+        return None
+    return digits[-4:]
+
+
+def _normalize_confidence_score(value):
+    """Clamp confidence scores to [0, 1]."""
+    number = _to_float(value)
+    if number is None:
+        return None
+    if number < 0:
+        return 0.0
+    if number > 1:
+        return 1.0
+    return number
+
+
+def _normalize_line_items(value):
+    """Normalize line items into a stable list schema."""
+    if not isinstance(value, list):
+        return []
+    normalized_items = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        normalized_items.append(
+            {
+                "description": (item.get("description") or item.get("desc") or None),
+                "quantity": _to_float(item.get("quantity")),
+                "unit_price": _to_float(item.get("unit_price")),
+                "total": _to_float(item.get("total")),
+                "tax_amount": _to_float(item.get("tax_amount")),
+            }
+        )
+    return normalized_items
 
 
 def _parse_ollama_response(text: str) -> dict:
@@ -30,10 +157,44 @@ def _parse_ollama_response(text: str) -> dict:
         return {"_raw": text, "_error": "Invalid JSON from LLM"}
     if not isinstance(data, dict):
         return {"_raw": text, "_error": "LLM did not return a JSON object"}
-    # Normalize to exact schema
+    # Normalize to exact schema and expected value types
     receipt = {}
     for key in RECEIPT_KEYS:
         receipt[key] = data.get(key) if data.get(key) is not None else None
+
+    for numeric_key in ("total_amount", "tax_amount", "tax_percentage", "exchange_rate", "net_amount"):
+        receipt[numeric_key] = _to_float(receipt.get(numeric_key))
+    if receipt.get("net_amount") is None and receipt.get("total_amount") is not None and receipt.get("tax_amount") is not None:
+        receipt["net_amount"] = receipt["total_amount"] - receipt["tax_amount"]
+    receipt["payment_method"] = _normalize_payment_method(receipt.get("payment_method"))
+    receipt["currency_code"] = _normalize_currency_code(receipt.get("currency_code"))
+    receipt["card_last_4"] = _normalize_last_4(receipt.get("card_last_4"))
+    receipt["line_items"] = _normalize_line_items(receipt.get("line_items"))
+
+    confidence_scores = receipt.get("confidence_scores")
+    if isinstance(confidence_scores, dict):
+        normalized_confidence_scores = {}
+        for c_key, c_value in confidence_scores.items():
+            normalized = _normalize_confidence_score(c_value)
+            if normalized is not None:
+                normalized_confidence_scores[str(c_key)] = normalized
+        receipt["confidence_scores"] = normalized_confidence_scores
+    else:
+        receipt["confidence_scores"] = {}
+    receipt["document_type_confidence"] = _normalize_confidence_score(receipt.get("document_type_confidence"))
+
+    if isinstance(receipt.get("vendor_tax_id"), str):
+        receipt["vendor_tax_id"] = receipt["vendor_tax_id"].strip() or None
+    if isinstance(receipt.get("invoice_number"), str):
+        receipt["invoice_number"] = receipt["invoice_number"].strip() or None
+    if isinstance(receipt.get("reference"), str):
+        receipt["reference"] = receipt["reference"].strip() or None
+    if isinstance(receipt.get("vendor_address"), str):
+        receipt["vendor_address"] = receipt["vendor_address"].strip() or None
+    if isinstance(receipt.get("shop_name"), str):
+        receipt["shop_name"] = receipt["shop_name"].strip() or None
+    if isinstance(receipt.get("category"), str):
+        receipt["category"] = receipt["category"].strip() or None
     return receipt
 
 
