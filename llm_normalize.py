@@ -35,7 +35,7 @@ Field rules:
 - date: ISO format YYYY-MM-DD when possible.
 - total_amount, tax_amount, tax_percentage, exchange_rate, net_amount: numeric.
 - currency_code: 3-letter ISO code like GBP, EUR, USD.
-- payment_method: one of CASH, CREDIT_CARD, DEBIT_CARD, BANK_TRANSFER, OTHER.
+- payment_method: one of CARD, CASH, ONLINE.
 - card_last_4: string containing exactly 4 digits when available.
 - line_items: array of objects with keys {description, quantity, unit_price, total, tax_amount}. Use empty array [] if nothing can be extracted.
 - confidence_scores: object map with confidence values from 0 to 1 for key fields (e.g. {"total_amount": 0.98, "date": 0.85}).
@@ -68,7 +68,7 @@ def _to_float(value):
 
 
 def _normalize_payment_method(value):
-    """Normalize payment method to known enum."""
+    """Normalize payment method to one of CARD/CASH/ONLINE."""
     if value is None:
         return None
     if not isinstance(value, str):
@@ -76,17 +76,26 @@ def _normalize_payment_method(value):
     raw = value.strip().upper().replace(" ", "_").replace("-", "_")
     if not raw:
         return None
-    if raw in {"CASH", "CREDIT_CARD", "DEBIT_CARD", "BANK_TRANSFER", "OTHER"}:
+    if raw in {"CARD", "CASH", "ONLINE"}:
         return raw
     aliases = {
-        "CARD": "CREDIT_CARD",
-        "CREDIT": "CREDIT_CARD",
-        "DEBIT": "DEBIT_CARD",
-        "BANK": "BANK_TRANSFER",
-        "TRANSFER": "BANK_TRANSFER",
-        "WIRE": "BANK_TRANSFER",
+        "CREDIT_CARD": "CARD",
+        "DEBIT_CARD": "CARD",
+        "CREDIT": "CARD",
+        "DEBIT": "CARD",
+        "VISA": "CARD",
+        "MASTERCARD": "CARD",
+        "AMEX": "CARD",
+        "UPI": "ONLINE",
+        "BANK_TRANSFER": "ONLINE",
+        "TRANSFER": "ONLINE",
+        "BANK": "ONLINE",
+        "WIRE": "ONLINE",
+        "ONLINE_PAYMENT": "ONLINE",
+        "E_WALLET": "ONLINE",
+        "WALLET": "ONLINE",
     }
-    return aliases.get(raw, "OTHER")
+    return aliases.get(raw)
 
 
 def _normalize_currency_code(value):

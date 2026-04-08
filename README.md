@@ -223,7 +223,7 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
         "tax_amount": 1.25
       }
     ],
-    "payment_method": "CREDIT_CARD",
+    "payment_method": "CARD",
     "card_last_4": "4242",
     "currency_code": "GBP",
     "exchange_rate": 1.0,
@@ -285,7 +285,7 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 | `reference`   | Receipt/reference ID       |
 | `vendor_address` | Vendor address          |
 | `line_items`  | Itemized lines             |
-| `payment_method` | CASH/CREDIT/DEBIT/BANK |
+| `payment_method` | CARD/CASH/ONLINE       |
 | `card_last_4` | Last 4 digits of card      |
 | `currency_code` | ISO 3-letter currency    |
 | `exchange_rate` | Currency conversion rate |
