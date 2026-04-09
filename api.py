@@ -22,8 +22,15 @@ from PIL import Image
 
 from pipeline import process_receipt_image
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 app = Flask(__name__)
-logger = logging.getLogger(__name__)
+app.logger.setLevel(logging.INFO)
+logging.getLogger("werkzeug").setLevel(logging.INFO)
+logger = app.logger
 
 # Job queue and single worker (one process at a time)
 _job_queue = queue.Queue()
