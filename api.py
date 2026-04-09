@@ -109,6 +109,10 @@ def _send_callback(job_id, payload):
     if not callback_url:
         logger.warning("CALLBACK_URL not set; skipping callback for job_id=%s", job_id)
         return
+    try:
+        logger.info("Outgoing callback payload job_id=%s: %s", job_id, json.dumps(payload, ensure_ascii=False))
+    except Exception:
+        logger.info("Outgoing callback payload job_id=%s (non-JSON-serializable payload)", job_id)
     for attempt in range(CALLBACK_RETRIES + 1):
         try:
             r = requests.post(
@@ -205,6 +209,7 @@ def health():
 def process():
     image, err = _load_image_from_request()
     if err:
+        logger.info("Outgoing /api/process error response: %s", err)
         return jsonify({"error": err}), 400
 
     questions = []
@@ -220,14 +225,18 @@ def process():
         job_id = str(uuid.uuid4())
         image_path = _save_image_to_temp(image, job_id)
         _job_queue.put({"job_id": job_id, "image_path": image_path, "questions": questions})
+        logger.info("Outgoing /api/process async response: %s", json.dumps({"job_id": job_id}, ensure_ascii=False))
         return jsonify({"job_id": job_id}), 202
 
     # Sync mode: run pipeline in request thread (one at a time via semaphore)
     _pipeline_semaphore.acquire()
     try:
         result = process_receipt_image(image, questions=questions)
-        return jsonify(_build_receipt_response(result))
+        response = _build_receipt_response(result)
+        logger.info("Outgoing /api/process sync response: %s", json.dumps(response, ensure_ascii=False))
+        return jsonify(response)
     except Exception as e:
+        logger.exception("Outgoing /api/process 500 error")
         return jsonify({"error": str(e)}), 500
     finally:
         _pipeline_semaphore.release()
