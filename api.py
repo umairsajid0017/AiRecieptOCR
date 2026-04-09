@@ -131,7 +131,8 @@ def _build_receipt_response(result):
     """Build JSON response dict from pipeline result (for sync mode)."""
     response = {
         "receipt": result["receipt"],
-        "category": result["receipt"].get("category")
+        "category": result["receipt"].get("category"),
+        "document_type": result["receipt"].get("document_type"),
     }
     if result.get("receipt_meta"):
         response["receipt_meta"] = result["receipt_meta"]
@@ -177,6 +178,7 @@ def _worker():
                 "status": "completed",
                 "receipt": result["receipt"],
                 "category": result["receipt"].get("category"),
+                "document_type": result["receipt"].get("document_type"),
             }
             if result.get("receipt_meta"):
                 payload["receipt_meta"] = result["receipt_meta"]

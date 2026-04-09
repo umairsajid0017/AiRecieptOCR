@@ -1,14 +1,14 @@
-# 🧾 Receipt OCR
+# 🧾 Receipt/Invoice OCR
 
-> Extract structured data from receipt images using a **vision model** (Ollama API) — with a shared pipeline for both API and UI.
+> Extract structured data from **receipt or invoice** images using a **vision model** (Ollama API) — with a shared pipeline for both API and UI.
 
 ---
 
 ## Overview
 
-**Receipt OCR** sends receipt images to an **Ollama vision model** and returns structured JSON:
+**Receipt OCR** sends **receipt or invoice** images to an **Ollama vision model** and returns structured JSON:
 
-- **Vision model** (OLLAMA_VISION_MODEL) — image → receipt fields in one step.
+- **Vision model** (OLLAMA_VISION_MODEL) — image → document fields in one step.
 
 The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
@@ -17,7 +17,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 ## ✨ Features
 
 - **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
-- **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt extraction via API.
+- **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt/invoice extraction via API.
 - **Structured output**: Fixed receipt schema with accounting-ready metadata, including VAT, invoice reference, payment details, line items, currency, and confidence scores.
 
 ---
@@ -26,8 +26,8 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│ Receipt     │ ──► │ Vision model     │ ──► │ Normalized      │
-│ Image       │     │ (Ollama API)     │     │ receipt JSON    │
+│ Document    │ ──► │ Vision model     │ ──► │ Normalized      │
+│ Image       │     │ (Ollama API)     │     │ JSON            │
 └─────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
@@ -117,7 +117,7 @@ cp .env.example .env
 **Minimal `.env`:**
 
 ```env
-# Required: vision model for receipt extraction (e.g. qwen2-vl:7b, llava)
+# Required: vision model for receipt/invoice extraction (e.g. qwen2-vl:7b, llava)
 OLLAMA_VISION_MODEL=qwen2-vl:7b
 ```
 
@@ -141,7 +141,7 @@ OLLAMA_VISION_MODEL=qwen2-vl:7b
 python app.py
 ```
 
-3. Open the URL in your browser (e.g. http://127.0.0.1:7860), upload a receipt image, and click **Process**. You’ll see the receipt JSON from the vision model.
+3. Open the URL in your browser (e.g. http://127.0.0.1:7860), upload a receipt or invoice image, and click **Process**. You’ll see the structured JSON from the vision model.
 
 ---
 
@@ -161,9 +161,9 @@ By default it runs at **http://0.0.0.0:5050**.
 curl http://localhost:5050/health
 ```
 
-3. **Process a receipt**
+3. **Process a receipt or invoice**
 
-With `API_MODE=async` (default), the API returns immediately with a job ID; processing runs in the background and results are POSTed to `CALLBACK_URL`. With `API_MODE=sync`, the request blocks and the response is the receipt JSON directly.
+With `API_MODE=async` (default), the API returns immediately with a job ID; processing runs in the background and results are POSTed to `CALLBACK_URL`. With `API_MODE=sync`, the request blocks and the response is the structured JSON directly.
 
 **Upload a file (multipart):**
 
@@ -189,7 +189,7 @@ curl -X POST http://localhost:5050/api/process \
 
 Results are sent to your callback URL when processing finishes. See [Async API and callback](#async-api-and-callback) for the callback payload format.
 
-**Example response (sync, 200 OK):** same receipt/raw structure as the callback success payload (see below).
+**Example response (sync, 200 OK):** same structure as the callback success payload (see below), including a top-level `document_type`.
 
 ---
 
@@ -203,6 +203,7 @@ Set `CALLBACK_URL` in your `.env` (e.g. `CALLBACK_URL=https://your-server.com/re
 {
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
+  "document_type": "RECEIPT",
   "receipt": {
     "shop_name": "Coffee Shop",
     "date": "2024-01-15",
@@ -271,11 +272,11 @@ print(result["receipt_meta"])      # None or {_error, _raw} if extraction failed
 
 ## Output schema
 
-The merged **receipt** object uses these keys (values may be `null` if not found):
+The merged **receipt** object uses these keys (values may be `null` if not found). This schema is used for **both receipts and invoices**:
 
 | Key           | Description                |
 |---------------|----------------------------|
-| `shop_name`   | Shop name                  |
+| `shop_name`   | Shop name (or vendor name on invoices) |
 | `date`        | Transaction date           |
 | `total_amount`| Total amount               |
 | `tax_amount`  | Tax amount                 |
@@ -303,7 +304,7 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 receiptOcr/
 ├── api.py           # Flask API (POST /api/process async → 202 + job_id; GET /health)
 ├── app.py           # Gradio UI
-├── pipeline.py      # Shared pipeline: image → vision model → receipt JSON
+├── pipeline.py      # Shared pipeline: image → vision model → normalized JSON
 ├── llm_normalize.py # Vision extraction (Ollama API)
 ├── requirements.txt
 ├── .env.example

@@ -1,6 +1,6 @@
 """
-Shared receipt pipeline: image → vision model (Ollama API) → receipt JSON.
-Used by both api.py (Flask) and app.py (Gradio). Single source of truth.
+Shared document pipeline: image → vision model (Ollama API) → structured JSON.
+Handles both receipts and invoices. Used by api.py (Flask) and app.py (Gradio).
 """
 import logging
 import os
@@ -20,7 +20,7 @@ def ensure_receipt_schema(receipt: dict) -> dict:
 
 def process_receipt_image(image, questions=None):
     """
-    Run the receipt pipeline on an image: vision model → JSON.
+    Run the document pipeline on an image (receipt or invoice): vision model → JSON.
 
     Args:
         image: PIL Image (RGB).
@@ -28,7 +28,7 @@ def process_receipt_image(image, questions=None):
 
     Returns:
         dict with:
-            receipt: normalized dict (RECEIPT_KEYS only).
+            receipt: normalized dict (RECEIPT_KEYS only). Works for both receipts and invoices.
             receipt_meta: None or dict with _error/_raw if extraction failed.
     """
     receipt = extract_receipt_from_image(image)

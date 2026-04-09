@@ -28,7 +28,7 @@ def run_ui(image):
 with gr.Blocks(title="Receipt/Document Analysis") as demo:
     gr.Markdown("# 🧾 Receipt/Document Analysis")
     gr.Markdown(
-        "Upload a receipt image. **Vision model** (Ollama API) → receipt JSON (same as API)."
+        "Upload a **receipt** or **invoice** image. **Vision model** (Ollama API) → structured JSON (same as API)."
     )
 
     with gr.Row():

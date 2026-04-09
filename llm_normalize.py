@@ -28,11 +28,12 @@ RECEIPT_KEYS = [
     "document_type_confidence",
 ]
 
-API_VISION_PROMPT = """Look at this receipt or invoice image and extract data.
+API_VISION_PROMPT = """Look at this receipt OR invoice image and extract data.
 Return ONLY a JSON object with exactly these keys (use null for missing values):
 shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, confidence_scores, document_type, document_type_confidence.
 
 Field rules:
+- shop_name: for receipts use the store name; for invoices use the vendor/supplier/company name shown on the document header.
 - date: ISO format YYYY-MM-DD when possible.
 - total_amount, tax_amount, tax_percentage, exchange_rate, net_amount: numeric.
 - currency_code: 3-letter ISO code like GBP, EUR, USD.
@@ -41,7 +42,7 @@ Field rules:
 - line_items: array of objects with keys {description, quantity, unit_price, total, tax_amount}. Use empty array [] if nothing can be extracted.
 - confidence_scores: object map with confidence values from 0 to 1 for key fields (e.g. {"total_amount": 0.98, "date": 0.85}).
 - document_type: one of INVOICE or RECEIPT.
-- document_type_confidence: confidence from 0 to 1 that this is a valid tax invoice/receipt document.
+- document_type_confidence: confidence from 0 to 1 that this is a valid invoice/receipt document. If the image is an invoice, this should still be high.
 - category: auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
 
 No markdown, no explanation, no extra keys, only JSON."""
@@ -88,6 +89,13 @@ def _normalize_payment_method(value):
         "VISA": "CARD",
         "MASTERCARD": "CARD",
         "AMEX": "CARD",
+        "CHEQUE": "ONLINE",
+        "CHECK": "ONLINE",
+        "DIRECT_DEBIT": "ONLINE",
+        "STANDING_ORDER": "ONLINE",
+        "NET_30": "ONLINE",
+        "NET_60": "ONLINE",
+        "NET_90": "ONLINE",
         "UPI": "ONLINE",
         "BANK_TRANSFER": "ONLINE",
         "TRANSFER": "ONLINE",
@@ -147,10 +155,17 @@ def _normalize_document_type(value):
         return raw
     aliases = {
         "TAX_INVOICE": "INVOICE",
+        "PROFORMA_INVOICE": "INVOICE",
+        "PROFORMA": "INVOICE",
+        "CREDIT_NOTE": "INVOICE",
+        "DEBIT_NOTE": "INVOICE",
+        "PURCHASE_ORDER": "INVOICE",
+        "STATEMENT": "INVOICE",
         "INVO": "INVOICE",
         "BILL": "INVOICE",
         "SIMPLIFIED_RECEIPT": "RECEIPT",
         "SALES_RECEIPT": "RECEIPT",
+        "TILL_RECEIPT": "RECEIPT",
         "SLIP": "RECEIPT",
     }
     return aliases.get(raw)
@@ -166,11 +181,13 @@ def _normalize_line_items(value):
             continue
         normalized_items.append(
             {
-                "description": (item.get("description") or item.get("desc") or None),
-                "quantity": _to_float(item.get("quantity")),
-                "unit_price": _to_float(item.get("unit_price")),
-                "total": _to_float(item.get("total")),
-                "tax_amount": _to_float(item.get("tax_amount")),
+                "description": (item.get("description") or item.get("desc")
+                                or item.get("item") or item.get("name")
+                                or item.get("product") or None),
+                "quantity": _to_float(item.get("quantity") or item.get("qty")),
+                "unit_price": _to_float(item.get("unit_price") or item.get("price") or item.get("rate")),
+                "total": _to_float(item.get("total") or item.get("amount") or item.get("line_total")),
+                "tax_amount": _to_float(item.get("tax_amount") or item.get("tax") or item.get("vat")),
             }
         )
     return normalized_items
@@ -274,7 +291,7 @@ def _extract_via_ollama_vision(image) -> dict:
             response = chat(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You extract receipt data. You must respond with only valid JSON, nothing else."},
+                    {"role": "system", "content": "You extract structured data from receipts and invoices. You must respond with only valid JSON, nothing else."},
                     {"role": "user", "content": API_VISION_PROMPT, "images": [path]},
                 ],
                 format="json",
