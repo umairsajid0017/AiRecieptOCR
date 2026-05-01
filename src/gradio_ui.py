@@ -9,14 +9,16 @@ load_dotenv()
 import gradio as gr
 
 from pipeline import process_receipt_image
+from api.utils import fetch_categories
 
 
 def run_ui(image):
     """Gradio handler: call shared pipeline and format outputs for UI."""
     if image is None:
-        return "Please upload an image.", "", ""
+        return "Please upload an image."
 
-    result = process_receipt_image(image)
+    categories = fetch_categories(account_type="EXPENSE")
+    result = process_receipt_image(image, categories=categories)
 
     receipt_str = json.dumps(result["receipt"], indent=2, ensure_ascii=False)
     if result.get("receipt_meta") and "_error" in result["receipt_meta"]:

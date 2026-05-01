@@ -12,6 +12,30 @@ logger = logging.getLogger(__name__)
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 CALLBACK_TIMEOUT_SEC = 30
 CALLBACK_RETRIES = 2
+CATEGORIES_API_URL = os.environ.get(
+    "CATEGORIES_API_URL", 
+    "http://localhost:9000/api/receipts/categories?&minify=true"
+)
+
+def fetch_categories(account_type="EXPENSE"):
+    """Fetch categories from external API for a specific accountType. Return list of objects or None."""
+    try:
+        # Base URL from env or default
+        url = CATEGORIES_API_URL
+        
+        # Ensure we append the accountType parameter correctly
+        separator = "&" if "?" in url else "?"
+        final_url = f"{url}{separator}accountType={account_type}"
+        
+        r = requests.get(final_url, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        return None
+    except Exception as e:
+        logger.warning("Could not fetch categories from API (%s): %s", account_type, e)
+        return None
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -99,11 +123,7 @@ def send_callback(job_id, payload):
 
 def build_receipt_response(result):
     """Build JSON response dict from pipeline result (for sync mode)."""
-    response = {
-        "receipt": result["receipt"],
-        "category": result["receipt"].get("category"),
-        "document_type": result["receipt"].get("document_type"),
-    }
+    response = result["receipt"].copy()
     if result.get("receipt_meta"):
         response["receipt_meta"] = result["receipt_meta"]
     return response

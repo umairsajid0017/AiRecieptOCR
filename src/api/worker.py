@@ -5,7 +5,7 @@ import logging
 import tempfile
 from PIL import Image
 from pipeline import process_receipt_image
-from .utils import send_callback
+from .utils import send_callback, fetch_categories
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ def worker_loop():
         job_id = job["job_id"]
         image_path = job["image_path"]
         questions = job["questions"]
+        account_type = job.get("account_type", "EXPENSE")
         try:
             try:
                 image = Image.open(image_path).convert("RGB")
@@ -37,7 +38,8 @@ def worker_loop():
             try:
                 pipeline_semaphore.acquire()
                 try:
-                    result = process_receipt_image(image, questions=questions)
+                    categories = fetch_categories(account_type=account_type)
+                    result = process_receipt_image(image, questions=questions, categories=categories)
                 finally:
                     pipeline_semaphore.release()
             except Exception as e:
@@ -48,13 +50,11 @@ def worker_loop():
                     except OSError:
                         pass
                 continue
-            payload = {
+            payload = result["receipt"].copy()
+            payload.update({
                 "job_id": job_id,
-                "status": "completed",
-                "receipt": result["receipt"],
-                "category": result["receipt"].get("category"),
-                "document_type": result["receipt"].get("document_type"),
-            }
+                "status": "completed"
+            })
             if result.get("receipt_meta"):
                 payload["receipt_meta"] = result["receipt_meta"]
             send_callback(job_id, payload)

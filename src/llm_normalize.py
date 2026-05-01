@@ -23,14 +23,27 @@ RECEIPT_KEYS = [
     "currency_code",
     "exchange_rate",
     "net_amount",
-    "confidence_scores",
     "document_type",
-    "document_type_confidence",
 ]
 
-API_VISION_PROMPT = """Look at this receipt OR invoice image and extract data.
+def get_vision_prompt(categories=None):
+    """Build the vision prompt. If categories provided, instruct LLM to pick one."""
+    category_rule = "auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities)."
+    if categories and isinstance(categories, list) and len(categories) > 0:
+        # Extract names if they are objects, otherwise assume they are strings
+        names = []
+        for c in categories:
+            if isinstance(c, dict) and "name" in c:
+                names.append(c["name"])
+            elif isinstance(c, str):
+                names.append(c)
+        
+        if names:
+            category_rule = f"MUST be one of these exact values: {', '.join(names)}."
+
+    return f"""Look at this receipt OR invoice image and extract data.
 Return ONLY a JSON object with exactly these keys (use null for missing values):
-shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, confidence_scores, document_type, document_type_confidence.
+shop_name, date, total_amount, tax_amount, tax_percentage, category, vendor_tax_id, invoice_number, reference, vendor_address, line_items, payment_method, card_last_4, currency_code, exchange_rate, net_amount, document_type.
 
 Field rules:
 - shop_name: for receipts use the store name; for invoices use the vendor/supplier/company name shown on the document header.
@@ -39,11 +52,9 @@ Field rules:
 - currency_code: 3-letter ISO code like GBP, EUR, USD.
 - payment_method: one of CARD, CASH, ONLINE.
 - card_last_4: string containing exactly 4 digits when available.
-- line_items: array of objects with keys {description, quantity, unit_price, total, tax_amount}. Use empty array [] if nothing can be extracted.
-- confidence_scores: object map with confidence values from 0 to 1 for key fields (e.g. {"total_amount": 0.98, "date": 0.85}).
+- line_items: array of objects with keys {{description, quantity, unit_price, total, tax_amount}}. Use empty array [] if nothing can be extracted.
 - document_type: one of INVOICE or RECEIPT.
-- document_type_confidence: confidence from 0 to 1 that this is a valid invoice/receipt document. If the image is an invoice, this should still be high.
-- category: auto-detect from contents (e.g. Food, Travel, Shopping, Supplies, Utilities).
+- category: {category_rule}
 
 No markdown, no explanation, no extra keys, only JSON."""
 
@@ -221,18 +232,7 @@ def _parse_ollama_response(text: str) -> dict:
     receipt["card_last_4"] = _normalize_last_4(receipt.get("card_last_4"))
     receipt["line_items"] = _normalize_line_items(receipt.get("line_items"))
 
-    confidence_scores = receipt.get("confidence_scores")
-    if isinstance(confidence_scores, dict):
-        normalized_confidence_scores = {}
-        for c_key, c_value in confidence_scores.items():
-            normalized = _normalize_confidence_score(c_value)
-            if normalized is not None:
-                normalized_confidence_scores[str(c_key)] = normalized
-        receipt["confidence_scores"] = normalized_confidence_scores
-    else:
-        receipt["confidence_scores"] = {}
     receipt["document_type"] = _normalize_document_type(receipt.get("document_type"))
-    receipt["document_type_confidence"] = _normalize_confidence_score(receipt.get("document_type_confidence"))
 
     if isinstance(receipt.get("vendor_tax_id"), str):
         receipt["vendor_tax_id"] = receipt["vendor_tax_id"].strip() or None
@@ -277,7 +277,7 @@ def _prepare_image_for_vision(image):
     return path
 
 
-def _extract_via_ollama_vision(image) -> dict:
+def _extract_via_ollama_vision(image, categories=None) -> dict:
     """Send receipt image to Ollama vision model; return receipt dict (RECEIPT_KEYS or _error/_raw)."""
     from ollama import chat, ResponseError
 
@@ -292,7 +292,7 @@ def _extract_via_ollama_vision(image) -> dict:
                 model=model,
                 messages=[
                     {"role": "system", "content": "You extract structured data from receipts and invoices. You must respond with only valid JSON, nothing else."},
-                    {"role": "user", "content": API_VISION_PROMPT, "images": [path]},
+                    {"role": "user", "content": get_vision_prompt(categories), "images": [path]},
                 ],
                 format="json",
             )
@@ -313,9 +313,9 @@ def _extract_via_ollama_vision(image) -> dict:
                 pass
 
 
-def extract_receipt_from_image(image) -> dict:
+def extract_receipt_from_image(image, categories=None) -> dict:
     """
     Send receipt image to Ollama vision model; return receipt dict with RECEIPT_KEYS.
     May include _error or _raw on failure. image: PIL Image (RGB).
     """
-    return _extract_via_ollama_vision(image)
+    return _extract_via_ollama_vision(image, categories=categories)
