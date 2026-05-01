@@ -85,7 +85,7 @@ After=network.target
 [Service]
 User=$SERVICE_USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=$VENV_DIR/bin/python -m gunicorn -w 1 -b 0.0.0.0:5050 api:app
+ExecStart=$VENV_DIR/bin/python -m gunicorn -w 1 -b 0.0.0.0:5050 --chdir $PROJECT_DIR/src api_server:app
 Restart=always
 Environment="PATH=$VENV_DIR/bin"
 

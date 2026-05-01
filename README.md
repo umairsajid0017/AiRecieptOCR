@@ -16,7 +16,8 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
 ## ✨ Features
 
-- **Dual interfaces**: REST API (`api.py`) and Gradio UI (`app.py`) using one pipeline.
+- **Dual interfaces**: REST API (`src/api_server.py`) and Gradio UI (`src/gradio_ui.py`) using one pipeline.
+- **Modular Design**: Separated API into Routes, Controllers, Worker, and Utilities for better maintainability.
 - **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt/invoice extraction via API.
 - **Structured output**: Fixed receipt schema with accounting-ready metadata, including VAT, invoice reference, payment details, line items, currency, and confidence scores.
 
@@ -138,7 +139,7 @@ OLLAMA_VISION_MODEL=qwen2-vl:7b
 2. Run the app:
 
 ```bash
-python app.py
+python src/gradio_ui.py
 ```
 
 3. Open the URL in your browser (e.g. http://127.0.0.1:7860), upload a receipt or invoice image, and click **Process**. You’ll see the structured JSON from the vision model.
@@ -150,7 +151,7 @@ python app.py
 1. Start the API server:
 
 ```bash
-python api.py
+python src/api_server.py
 ```
 
 By default it runs at **http://0.0.0.0:5050**.
@@ -259,7 +260,7 @@ Jobs are processed **one at a time** by a single background worker. If `CALLBACK
 
 ```python
 from PIL import Image
-from pipeline import process_receipt_image
+from src.pipeline import process_receipt_image
 
 image = Image.open("receipt.jpg").convert("RGB")
 result = process_receipt_image(image)
@@ -301,11 +302,19 @@ The merged **receipt** object uses these keys (values may be `null` if not found
 ## Project structure
 
 ```
-receiptOcr/
-├── api.py           # Flask API (POST /api/process async → 202 + job_id; GET /health)
-├── app.py           # Gradio UI
-├── pipeline.py      # Shared pipeline: image → vision model → normalized JSON
-├── llm_normalize.py # Vision extraction (Ollama API)
+AiRecieptOCR/
+├── src/
+│   ├── api/             # Modular API package
+│   │   ├── __init__.py  # App factory
+│   │   ├── routes.py    # Route definitions
+│   │   ├── controllers.py # Request handlers
+│   │   ├── worker.py    # Background job queue
+│   │   └── utils.py     # Image/Callback helpers
+│   ├── api_server.py    # Flask API Entry Point
+│   ├── gradio_ui.py     # Gradio UI
+│   ├── pipeline.py      # Shared pipeline
+│   ├── llm_normalize.py # Vision extraction
+│   └── models/          # Model data
 ├── requirements.txt
 ├── .env.example
 └── README.md
@@ -318,7 +327,7 @@ receiptOcr/
 For production, run the Flask app with Gunicorn:
 
 ```bash
-gunicorn -w 1 -b 0.0.0.0:5050 api:app
+gunicorn -w 1 -b 0.0.0.0:5050 --chdir src api_server:app
 ```
 
 ---

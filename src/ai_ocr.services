@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=bitnami
 WorkingDirectory=/home/bitnami/AiRecieptOCR
-ExecStart=/home/bitnami/AiRecieptOCR/myenv/bin/python -m gunicorn -w 1 -b 0.0.0.0:5050 api:app
+ExecStart=/home/bitnami/AiRecieptOCR/myenv/bin/python -m gunicorn -w 1 -b 0.0.0.0:5050 --chdir /home/bitnami/AiRecieptOCR/src api_server:app
 Restart=always
 Environment="PATH=/home/bitnami/AiRecieptOCR/myenv/bin"
 
