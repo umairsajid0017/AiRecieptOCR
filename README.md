@@ -8,7 +8,7 @@
 
 **Receipt OCR** sends **receipt or invoice** images to an **Ollama vision model** and returns structured JSON:
 
-- **Vision model** (OLLAMA_VISION_MODEL) — image → document fields in one step.
+- **Vision model** (`AI_TASK_RECEIPT_VISION_MODEL`) — image → document fields in one step.
 
 The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
@@ -18,7 +18,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 
 - **Dual interfaces**: REST API (`src/api_server.py`) and Gradio UI (`src/gradio_ui.py`) using one pipeline.
 - **Modular Design**: Separated API into Routes, Controllers, Worker, and Utilities for better maintainability.
-- **Ollama vision**: [Ollama](https://ollama.ai) vision model (e.g. qwen3-vl, llava) for receipt/invoice extraction via API.
+- **Multi-provider vision**: Ollama, Groq, OpenRouter, or Gemini — selected via `AI_TASK_RECEIPT_VISION_PROVIDER` in `.env`.
 - **Structured output**: Fixed receipt schema with accounting-ready metadata, including VAT, invoice reference, payment details, line items, currency, and confidence scores.
 
 ---
@@ -37,7 +37,7 @@ The same pipeline powers a **Flask REST API** and a **Gradio** web UI.
 ## Prerequisites
 
 - **Python** 3.10+
-- **Ollama** (or compatible API): [Install Ollama](https://ollama.ai) and pull a vision model, e.g. `ollama pull qwen2-vl:7b` or use a cloud vision model via `OLLAMA_VISION_MODEL`
+- **AI provider**: Configure one of Ollama, Groq, OpenRouter, or Gemini in `.env` (see `.env.example`).
 
 ---
 
@@ -118,9 +118,12 @@ cp .env.example .env
 **Minimal `.env`:**
 
 ```env
-# Required: vision model for receipt/invoice extraction (e.g. qwen2-vl:7b, llava)
-OLLAMA_VISION_MODEL=qwen2-vl:7b
+AI_TASK_RECEIPT_VISION_PROVIDER=ollama
+AI_TASK_RECEIPT_VISION_MODEL=ministral-3:8b-cloud
+OLLAMA_URL=http://localhost:11434/api/generate
 ```
+
+Supported providers (set `AI_TASK_RECEIPT_VISION_PROVIDER`): `ollama`, `groq`, `gemini`, `openrouter`. See `.env.example` for all credential variables.
 
 **API behavior:**
 
@@ -135,7 +138,7 @@ OLLAMA_VISION_MODEL=qwen2-vl:7b
 
 ### Option A — Gradio UI (easiest)
 
-1. Set `OLLAMA_VISION_MODEL` in `.env` and ensure Ollama (or your API) is running with that vision model.
+1. Set `AI_TASK_RECEIPT_VISION_PROVIDER` and `AI_TASK_RECEIPT_VISION_MODEL` in `.env` (see `.env.example`).
 2. Run the app:
 
 ```bash

@@ -1,10 +1,13 @@
 """
-Vision-based receipt extraction via Ollama API. Image → vision model → receipt JSON.
+Vision-based receipt extraction via unified AI providers. Image → vision model → receipt JSON.
 """
+import base64
 import json
 import os
 import re
 import tempfile
+
+from lib.ai import run_ai_task_json
 
 RECEIPT_KEYS = [
     "shop_name",
@@ -249,19 +252,20 @@ def _parse_ollama_response(text: str) -> dict:
     return receipt
 
 
-# Max dimension for vision uploads (Ollama has request body limits). Env: OLLAMA_VISION_MAX_PIXELS (default 2048).
-_VISION_MAX_PIXELS = int(os.environ.get("OLLAMA_VISION_MAX_PIXELS", "2048"))
-_VISION_JPEG_QUALITY = int(os.environ.get("OLLAMA_VISION_JPEG_QUALITY", "88"))
-
-
-def _get_vision_model() -> str:
-    """Vision model for receipt extraction. Requires OLLAMA_VISION_MODEL to be set."""
-    return os.environ.get("OLLAMA_VISION_MODEL", "").strip()
+# Max dimension for vision uploads. Env: AI_VISION_MAX_PIXELS (default 2048).
+_VISION_MAX_PIXELS = int(
+    os.environ.get("AI_VISION_MAX_PIXELS")
+    or os.environ.get("OLLAMA_VISION_MAX_PIXELS", "2048")
+)
+_VISION_JPEG_QUALITY = int(
+    os.environ.get("AI_VISION_JPEG_QUALITY")
+    or os.environ.get("OLLAMA_VISION_JPEG_QUALITY", "88")
+)
 
 
 def _prepare_image_for_vision(image):
     """
-    Resize image if needed and save as JPEG to stay under Ollama request body limits.
+    Resize image if needed and save as JPEG to stay under request body limits.
     image: PIL Image (RGB). Returns path to temp .jpg; caller must delete when done.
     """
     from PIL import Image as PILImage
@@ -277,34 +281,48 @@ def _prepare_image_for_vision(image):
     return path
 
 
-def _extract_via_ollama_vision(image, categories=None) -> dict:
-    """Send receipt image to Ollama vision model; return receipt dict (RECEIPT_KEYS or _error/_raw)."""
-    from ollama import chat, ResponseError
-
-    model = _get_vision_model()
-    if not model:
-        return {"_error": "OLLAMA_VISION_MODEL is not set. Set it in .env (e.g. qwen3-vl:8b, llava)."}
+def _extract_via_ai_vision(image, categories=None) -> dict:
+    """Send receipt image to configured vision provider; return receipt dict."""
     path = None
     try:
         path = _prepare_image_for_vision(image)
-        try:
-            response = chat(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You extract structured data from receipts and invoices. You must respond with only valid JSON, nothing else."},
-                    {"role": "user", "content": get_vision_prompt(categories), "images": [path]},
-                ],
-                format="json",
-            )
-        except ResponseError as e:
-            msg = str(e).strip()
-            if "404" in msg or "not found" in msg.lower():
-                return {"_error": f"Ollama vision model {model!r} not found. Set OLLAMA_VISION_MODEL in .env (e.g. llava, qwen3-vl:8b)."}
-            return {"_error": f"Ollama error: {msg}"}
-        text = response.message.content if response and response.message else ""
-        if not text:
-            return {"_error": "Empty response from Ollama"}
-        return _parse_ollama_response(text)
+        with open(path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        system = (
+            "You extract structured data from receipts and invoices. "
+            "You must respond with only valid JSON, nothing else."
+        )
+        prompt = f"{system}\n\n{get_vision_prompt(categories)}"
+
+        data, result = run_ai_task_json(
+            "receipt_vision",
+            prompt,
+            images=[img_b64],
+            json_mode=True,
+        )
+
+        if result.skipped:
+            reason = result.skip_reason or "AI task skipped"
+            if "not configured" in reason.lower():
+                return {
+                    "_error": (
+                        f"{result.provider or 'AI'} not configured. "
+                        "Set credentials in .env and AI_TASK_RECEIPT_VISION_PROVIDER."
+                    )
+                }
+            if "no model" in reason.lower() or not result.model:
+                return {
+                    "_error": (
+                        "AI_TASK_RECEIPT_VISION_MODEL is not set. "
+                        "Set it in .env (e.g. ministral-3:8b-cloud, llava, gemini-2.0-flash)."
+                    )
+                }
+            return {"_error": reason}
+
+        if not data:
+            return {"_error": result.skip_reason or "Invalid JSON from LLM", "_raw": result.text}
+        return _parse_ollama_response(json.dumps(data))
     finally:
         if path and os.path.isfile(path):
             try:
@@ -315,7 +333,7 @@ def _extract_via_ollama_vision(image, categories=None) -> dict:
 
 def extract_receipt_from_image(image, categories=None) -> dict:
     """
-    Send receipt image to Ollama vision model; return receipt dict with RECEIPT_KEYS.
+    Send receipt image to configured vision provider; return receipt dict with RECEIPT_KEYS.
     May include _error or _raw on failure. image: PIL Image (RGB).
     """
-    return _extract_via_ollama_vision(image, categories=categories)
+    return _extract_via_ai_vision(image, categories=categories)
