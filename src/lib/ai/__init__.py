@@ -15,6 +15,22 @@ def _empty_result(provider: str, model: str) -> CompletionResult:
     return CompletionResult(text="", provider=provider, model=model)
 
 
+def _skipped_result(
+    provider: str,
+    model: str,
+    reason: str,
+    *,
+    text: str = "",
+) -> CompletionResult:
+    return CompletionResult(
+        text=text,
+        provider=provider,
+        model=model,
+        skipped=True,
+        skip_reason=reason,
+    )
+
+
 def extract_json_object(text: str) -> Optional[str]:
     cleaned = text.strip()
     cleaned = re.sub(r"```(?:json)?\n?", "", cleaned)
@@ -49,33 +65,17 @@ def run_ai_task(
     model = task_cfg.model
 
     if not config.AI_ENABLED or not task_cfg.enabled:
-        return CompletionResult(
-            **_empty_result(provider_name, model).__dict__,
-            skipped=True,
-            skip_reason="AI disabled for this task",
-        )
+        return _skipped_result(provider_name, model, "AI disabled for this task")
 
     if not model:
-        return CompletionResult(
-            **_empty_result(provider_name, model).__dict__,
-            skipped=True,
-            skip_reason=f"No model configured for task {task}",
-        )
+        return _skipped_result(provider_name, model, f"No model configured for task {task}")
 
     provider = REGISTRY.get(provider_name)
     if not provider:
-        return CompletionResult(
-            **_empty_result(provider_name, model).__dict__,
-            skipped=True,
-            skip_reason=f"Unknown provider: {provider_name}",
-        )
+        return _skipped_result(provider_name, model, f"Unknown provider: {provider_name}")
 
     if not provider["is_configured"]():
-        return CompletionResult(
-            **_empty_result(provider_name, model).__dict__,
-            skipped=True,
-            skip_reason=f"{provider_name} not configured",
-        )
+        return _skipped_result(provider_name, model, f"{provider_name} not configured")
 
     try:
         text = provider["generate"](
@@ -89,18 +89,10 @@ def run_ai_task(
             )
         )
         if not text:
-            return CompletionResult(
-                **_empty_result(provider_name, model).__dict__,
-                skipped=True,
-                skip_reason="empty AI response",
-            )
+            return _skipped_result(provider_name, model, "empty AI response")
         return CompletionResult(text=text, provider=provider_name, model=model)
     except Exception as exc:
-        return CompletionResult(
-            **_empty_result(provider_name, model).__dict__,
-            skipped=True,
-            skip_reason=str(exc),
-        )
+        return _skipped_result(provider_name, model, str(exc))
 
 
 def run_ai_task_json(
@@ -108,27 +100,26 @@ def run_ai_task_json(
     prompt: str,
     **kwargs: Any,
 ) -> tuple[dict | None, CompletionResult]:
+    kwargs.pop("json_mode", None)
     result = run_ai_task(task, prompt, json_mode=True, temperature=0.0, **kwargs)
     if result.skipped or not result.text:
         return None, result
 
     json_str = extract_json_object(result.text)
     if not json_str:
-        return None, CompletionResult(
+        return None, _skipped_result(
+            result.provider,
+            result.model,
+            "no JSON object in AI response",
             text=result.text,
-            provider=result.provider,
-            model=result.model,
-            skipped=True,
-            skip_reason="no JSON object in AI response",
         )
 
     try:
         return json.loads(json_str), result
     except json.JSONDecodeError as exc:
-        return None, CompletionResult(
+        return None, _skipped_result(
+            result.provider,
+            result.model,
+            f"JSON parse failed: {exc}",
             text=result.text,
-            provider=result.provider,
-            model=result.model,
-            skipped=True,
-            skip_reason=f"JSON parse failed: {exc}",
         )

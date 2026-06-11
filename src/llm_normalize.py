@@ -299,7 +299,6 @@ def _extract_via_ai_vision(image, categories=None) -> dict:
             "receipt_vision",
             prompt,
             images=[img_b64],
-            json_mode=True,
         )
 
         if result.skipped:
