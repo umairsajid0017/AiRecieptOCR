@@ -9,13 +9,14 @@ from .utils import send_callback, fetch_categories
 
 logger = logging.getLogger(__name__)
 
-# Job queue and single worker (one process at a time)
+# Job queue and worker pool concurrency configurations
+concurrency_limit = int(os.environ.get("CONCURRENCY_LIMIT", "10"))
 job_queue = queue.Queue()
 temp_dir = tempfile.mkdtemp(prefix="receipt_ocr_")
-pipeline_semaphore = threading.Semaphore(1)  # shared by sync and async: only one pipeline run at a time
+pipeline_semaphore = threading.Semaphore(concurrency_limit)  # shared by sync and async: process up to concurrency_limit pipelines at a time
 
 def worker_loop():
-    """Single worker: get job from queue, run pipeline, POST to callback, delete temp file."""
+    """Worker loop: get job from queue, run pipeline, POST to callback, delete temp file."""
     while True:
         job = job_queue.get()
         if job is None:
@@ -67,6 +68,16 @@ def worker_loop():
         job_queue.task_done()
 
 def start_worker():
-    worker_thread = threading.Thread(target=worker_loop, daemon=True)
-    worker_thread.start()
-    return worker_thread
+    """Start concurrency_limit of daemon worker threads."""
+    threads = []
+    logger.info("Starting %d background OCR worker threads...", concurrency_limit)
+    for i in range(concurrency_limit):
+        worker_thread = threading.Thread(
+            target=worker_loop, 
+            name=f"OCRWorker-{i}", 
+            daemon=True
+        )
+        worker_thread.start()
+        threads.append(worker_thread)
+    return threads
+
