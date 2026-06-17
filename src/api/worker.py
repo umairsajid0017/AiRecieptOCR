@@ -81,3 +81,18 @@ def start_worker():
         threads.append(worker_thread)
     return threads
 
+_worker_started = False
+_worker_lock = threading.Lock()
+
+def ensure_worker_started():
+    """Ensure that the background worker threads are started, but only in async mode."""
+    global _worker_started
+    if not _worker_started:
+        with _worker_lock:
+            if not _worker_started:
+                from .utils import is_async_mode
+                if is_async_mode():
+                    start_worker()
+                _worker_started = True
+
+
