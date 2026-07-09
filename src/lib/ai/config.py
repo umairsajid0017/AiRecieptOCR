@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import os
 import warnings
-
 from dotenv import load_dotenv
 
 from .types import PROVIDER_NAMES, ProviderName, TaskConfig
 
-load_dotenv()
+# Find .env in the parent directories
+current_dir = os.path.dirname(os.path.abspath(__file__))
+for _ in range(5):
+    dotenv_path = os.path.join(current_dir, ".env")
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path)
+        break
+    parent = os.path.dirname(current_dir)
+    if parent == current_dir:
+        break
+    current_dir = parent
+else:
+    load_dotenv()
+
+
 
 
 def _to_bool(value: str | None, fallback: bool) -> bool:

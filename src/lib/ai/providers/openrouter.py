@@ -18,7 +18,7 @@ def generate(input: GenerateInput) -> str:
         "messages": [{"role": "user", "content": _build_content(input.prompt, input.images)}],
         "temperature": input.temperature,
     }
-    if input.json_mode:
+    if input.json_mode and "qwen" not in input.model.lower():
         body["response_format"] = {"type": "json_object"}
 
     resp = requests.post(
