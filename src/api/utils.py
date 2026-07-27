@@ -4,7 +4,7 @@ import json
 import logging
 import requests
 import tempfile
-from PIL import Image
+from PIL import Image, ImageOps
 from flask import request
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,9 @@ def load_image_from_request():
         if not allowed_file(file.filename):
             return None, "Invalid image type; use PNG or JPEG"
         try:
-            image = Image.open(io.BytesIO(file.read())).convert("RGB")
+            image = Image.open(io.BytesIO(file.read()))
+            image = ImageOps.exif_transpose(image) or image
+            image = image.convert("RGB")
             return image, None
         except Exception as e:
             return None, f"Invalid image: {e!s}"
@@ -83,7 +85,9 @@ def load_image_from_request():
             if ext not in ALLOWED_EXTENSIONS:
                 return None, "Invalid image type; use PNG or JPEG"
             try:
-                image = Image.open(path).convert("RGB")
+                image = Image.open(path)
+                image = ImageOps.exif_transpose(image) or image
+                image = image.convert("RGB")
                 return image, None
             except Exception as e:
                 return None, f"Invalid image: {e!s}"

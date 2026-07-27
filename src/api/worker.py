@@ -3,7 +3,7 @@ import queue
 import threading
 import logging
 import tempfile
-from PIL import Image
+from PIL import Image, ImageOps
 from pipeline import process_receipt_image
 from .utils import send_callback, fetch_categories
 
@@ -27,7 +27,9 @@ def worker_loop():
         account_type = job.get("account_type", "EXPENSE")
         try:
             try:
-                image = Image.open(image_path).convert("RGB")
+                image = Image.open(image_path)
+                image = ImageOps.exif_transpose(image) or image
+                image = image.convert("RGB")
             except Exception as e:
                 send_callback(job_id, {"job_id": job_id, "status": "failed", "error": f"Failed to load image: {e!s}"})
                 if os.path.isfile(image_path):
