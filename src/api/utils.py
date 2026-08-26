@@ -110,12 +110,16 @@ def send_callback(job_id, payload):
         logger.info("Outgoing callback payload job_id=%s: %s", job_id, json.dumps(payload, ensure_ascii=False))
     except Exception:
         logger.info("Outgoing callback payload job_id=%s (non-JSON-serializable payload)", job_id)
+    headers = {
+        "Content-Type": "application/json",
+        "x-processing-secret": os.environ.get("PROCESSING_CALLBACK_SECRET", ""),
+    }
     for attempt in range(CALLBACK_RETRIES + 1):
         try:
             r = requests.post(
                 callback_url,
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 timeout=CALLBACK_TIMEOUT_SEC,
             )
             r.raise_for_status()
