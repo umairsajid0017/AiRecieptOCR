@@ -1,6 +1,7 @@
 import uuid
 import json
 import logging
+import time
 from flask import jsonify, request
 from pipeline import process_receipt_image
 from .utils import (
@@ -18,6 +19,7 @@ def health_check():
     return jsonify({"status": "ok"})
 
 def process_receipt():
+    started_at = time.time()
     image, err = load_image_from_request()
     if err:
         logger.info("Outgoing /api/process error response: %s", err)
@@ -59,8 +61,14 @@ def process_receipt():
     pipeline_semaphore.acquire()
     try:
         categories = fetch_categories(account_type=account_type)
+        logger.info(
+            "OCR pipeline starting: accountType=%s categories=%s",
+            account_type,
+            len(categories) if isinstance(categories, list) else 0,
+        )
         result = process_receipt_image(image, questions=questions, categories=categories)
         response = build_receipt_response(result)
+        logger.info("OCR pipeline finished in %.2fs", time.time() - started_at)
         logger.info("Outgoing /api/process sync response: %s", json.dumps(response, ensure_ascii=False))
         return jsonify(response)
     except Exception as e:

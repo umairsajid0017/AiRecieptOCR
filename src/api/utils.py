@@ -4,6 +4,7 @@ import json
 import logging
 import requests
 import tempfile
+import time
 from PIL import Image, ImageOps
 from flask import request
 
@@ -26,10 +27,18 @@ def fetch_categories(account_type="EXPENSE"):
         # Ensure we append the accountType parameter correctly
         separator = "&" if "?" in url else "?"
         final_url = f"{url}{separator}accountType={account_type}"
-        
+
+        started_at = time.time()
         r = requests.get(final_url, timeout=5)
         r.raise_for_status()
         data = r.json()
+        logger.info(
+            "Fetched OCR categories: accountType=%s status=%s duration=%.2fs count=%s",
+            account_type,
+            r.status_code,
+            time.time() - started_at,
+            len(data) if isinstance(data, list) else 0,
+        )
         if isinstance(data, list):
             return data
         return None
